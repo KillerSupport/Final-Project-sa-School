@@ -1,0 +1,176 @@
+/* --- Main Background --- */
+.auth-page-bg {
+    min-height: 100vh;
+    width: 100vw;
+    background: url('/isda_bg.png') no-repeat center center fixed;
+    background-size: cover;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* --- Glass Card Layout --- */
+.auth-glass-card {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 25px;
+    display: flex;
+    width: 950px;
+    min-height: 550px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    overflow: hidden;
+}
+
+.auth-branding {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+}
+
+.auth-branding h1 {
+    color: white;
+    font-size: 2.8rem;
+    text-align: center;
+    text-shadow: 2px 2px 10px rgba(0,0,0,0.8);
+    font-family: 'Marker Felt', fantasy; 
+}
+
+.auth-form-container {
+    flex: 1.2;
+    padding: 30px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.auth-form-container h2 {
+    color: white;
+    text-align: center;
+    margin-bottom: 25px;
+    font-size: 3rem;
+    font-family: Impact, fantasy;
+    letter-spacing: 2px;
+}
+
+.auth-label {
+    color: white;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.auth-input {
+    width: 100%;
+    padding: 12px 15px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.95);
+    font-size: 1rem;
+    color: #333;
+}
+
+.password-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.eye-icon {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #333;
+}
+
+.forgot-link-container {
+    width: 100%;
+    text-align: right;
+    margin-top: 5px;
+    margin-bottom: 15px;
+}
+
+.forgot-link {
+    font-size: 0.85rem;
+    color: white;
+}
+
+/* --- Form Buttons --- */
+.button-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.auth-button {
+    width: 180px;
+    padding: 12px;
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 30px;
+    font-size: 1.1rem;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.auth-footer-text {
+    color: white;
+    margin-top: 15px;
+    font-size: 0.95rem;
+}
+
+.link-span {
+    color: #ff0000;
+    cursor: pointer;
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+/* --- CLEAN SWEETALERT OVERRIDES --- */
+.swal2-popup {
+    min-height: auto !important;
+    border-radius: 15px !important;
+}
+
+.swal-plain-title {
+    font-family: 'Arial', sans-serif !important;
+    font-size: 1.5rem !important;
+    font-weight: bold !important;
+    color: #000000 !important;
+    text-shadow: none !important;
+    margin-top: 5px !important;
+}
+
+.swal-plain-text {
+    font-family: 'Arial', sans-serif !important;
+    font-size: 1rem !important;
+    color: #333333 !important;
+    text-shadow: none !important; 
+    line-height: 1.4 !important;
+}
+
+.swal2-actions {
+    margin-top: 15px !important;
+    padding-bottom: 5px !important;
+}
+
+/* --- Interactive Hover Effects --- */
+.link-span:hover {
+    color: #ff4d4d; /* Lighter red on hover */
+    text-shadow: 0 0 8px rgba(255, 0, 0, 0.5);
+    transition: all 0.3s ease;
+}
+
+.auth-button:hover {
+    background-color: #1d4ed8; /* Darker blue on hover */
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(37, 99, 235, 0.4);
+    transition: all 0.3s ease;
+}

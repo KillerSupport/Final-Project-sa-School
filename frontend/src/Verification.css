@@ -1,0 +1,199 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&display=swap');
+
+.auth-page-bg {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Uses your local fish background */
+    background: linear-gradient(rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.65)), 
+                url('./isda_bg.png'); 
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    font-family: 'Poppins', sans-serif;
+    padding: 20px;
+}
+
+.auth-glass-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    display: flex;
+    width: 900px;
+    max-width: 100%;
+    min-height: 500px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
+.auth-branding {
+    flex: 1;
+    background: rgba(0, 123, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.recovery-side-text {
+    color: white;
+    font-size: 2.2rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.recovery-form-container {
+    flex: 1.2;
+    padding: 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.main-recovery-title {
+    color: white;
+    font-size: 1.8rem;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.verify-instruction-text {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.95rem;
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+
+.central-column-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Timer Badge */
+.timer-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 8px 15px;
+    border-radius: 50px;
+    color: #00d4ff;
+    font-size: 0.85rem;
+    width: fit-content;
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+.timeout-text {
+    color: #ff4d4d;
+    border-color: #ff4d4d;
+    background: rgba(255, 77, 77, 0.1);
+}
+
+/* OTP Input Styling */
+.input-field-wrapper {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    padding: 12px 15px;
+}
+
+.field-icon-main {
+    color: white;
+    margin-right: 15px;
+}
+
+.centered-input {
+    background: transparent;
+    border: none;
+    color: white;
+    width: 100%;
+    outline: none;
+}
+
+.verify-otp-input {
+    text-align: center;
+    letter-spacing: 15px;
+    font-size: 1.5rem;
+    font-weight: bold;
+    text-indent: 15px; /* Centers the text properly despite spacing */
+}
+
+/* Action Button */
+.blue-action-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 15px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.3s;
+}
+
+.blue-action-btn:hover {
+    background: #0056b3;
+    transform: translateY(-2px);
+}
+
+.resend-container {
+    text-align: center;
+    margin-top: 15px;
+    color: white;
+    font-size: 0.9rem;
+}
+
+.resend-link-btn {
+    background: none;
+    border: none;
+    color: #00d4ff;
+    cursor: pointer;
+    font-weight: bold;
+    padding: 0;
+    font-size: 0.9rem;
+}
+
+.back-to-login-btn {
+    margin-top: 25px;
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    transition: 0.3s;
+}
+
+.back-to-login-btn:hover {
+    color: white;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .auth-glass-card {
+        flex-direction: column;
+        width: 100%;
+    }
+    .auth-branding {
+        padding: 30px;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+}

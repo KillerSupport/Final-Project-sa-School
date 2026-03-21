@@ -1,0 +1,147 @@
+.signup-page-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    width: 100vw;
+    background: url('/isda_bg.png') no-repeat center center fixed;
+    background-size: cover;
+    overflow: hidden;
+    font-family: 'Poppins', sans-serif;
+}
+
+.narrow-signup {
+    width: 800px !important;
+}
+
+.signup-main-form {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    padding: 20px 35px;
+    border-radius: 20px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+}
+
+.form-header {
+    font-family: Impact, sans-serif;
+    color: white;
+    font-size: 2.2rem;
+    text-align: center;
+    margin-bottom: 20px;
+    text-transform: uppercase;
+}
+
+.signup-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 12px;
+}
+
+/* Grid Helpers */
+.col-2 { grid-column: span 2; } 
+.col-4 { grid-column: span 4; }
+.col-5 { grid-column: span 5; }
+.col-12 { grid-column: span 12; }
+
+.input-group label {
+    display: block;
+    color: white;
+    font-size: 0.8rem;
+    margin-bottom: 3px;
+    font-weight: 500;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: none;
+    background: white;
+    color: #333;
+    font-size: 0.9rem;
+}
+
+.pass-input-container { position: relative; }
+
+.eye-toggle {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #444;
+}
+
+/* Password Checker Styles */
+.strength-feedback-compact { 
+    margin-top: 8px; 
+    margin-bottom: 5px; 
+}
+
+.bar-bg { 
+    width: 100%; 
+    height: 4px; 
+    background: rgba(255,255,255,0.1); 
+    border-radius: 2px; 
+}
+
+.bar-fill { 
+    height: 100%; 
+    transition: 0.3s ease; 
+    border-radius: 2px; 
+}
+
+.req-grid { 
+    display: grid; 
+    grid-template-columns: repeat(4, 1fr); 
+    margin-top: 5px; 
+}
+
+.req-grid div { 
+    font-size: 0.65rem; 
+    color: rgba(255,255,255,0.3); 
+    text-align: center; 
+}
+
+.req-grid div.met { 
+    color: #22c55e; 
+    font-weight: bold; 
+}
+
+.signup-footer-compact {
+    margin-top: 25px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.signup-btn-small {
+    padding: 12px 60px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 25px;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.signup-btn-small:hover { 
+    transform: scale(1.05); 
+    background: #1d4ed8; 
+}
+
+.back-link-small {
+    color: rgba(255, 253, 253, 0.6);
+    font-size: 0.85rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.back-link-small:hover {
+    color: white;
+}
