@@ -61,6 +61,16 @@
     font-size: 0.9rem;
 }
 
+/* Remove any custom appearance for date input to allow native calendar */
+.input-group input[type="date"] {
+    appearance: auto;
+    -webkit-appearance: auto;
+    -moz-appearance: auto;
+    padding-right: 14px;
+    font-family: inherit;
+    letter-spacing: normal;
+}
+
 .pass-input-container { position: relative; }
 
 .eye-toggle {

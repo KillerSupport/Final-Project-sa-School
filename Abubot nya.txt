@@ -6,11 +6,15 @@ To open backend(type in terminal):
 cd backend
 node server.js
 
+Repository: https://github.com/KillerSupport/Final-Project-sa-School
+
 Database name: db_project 
 Table name: user_accounts
 Worker acc: harijiem@gmail.com Worker143 or Worker123
 Admin acc: TongTongOrnamental@gmail.com AdminAcc123 or AdminAcc143
 Sample acc client: harijie.mabilin@cvsu.edu.ph HatsuneMiku39 or MikuHatsune39
+Test acc: mharijie@gmail.com
+Testinge2 or testingE2
 
 
 To promote someone's' role:
@@ -20,4 +24,4 @@ WHERE email = 'email@gmail.com';
 
 
 user: 'tongtongornamental@gmail.com', 
-pass: 'ylxh naks qqwv txod' 
+pass: 'wsei zyzt cwpo tzlo' 

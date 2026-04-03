@@ -5,23 +5,19 @@ import Swal from 'sweetalert2';
 import axios from 'axios';
 import './ForgotPassword.css';
 
+
 const ForgotPassword = () => {
-    const [step, setStep] = useState(1); 
+    const [step, setStep] = useState(1); // 1: email/otp, 2: reset password
     const [email, setEmail] = useState('');
     const [otp, setOtp] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
-    
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    
     const [strength, setStrength] = useState({ label: '', color: '', score: 0 });
-    const [requirements, setRequirements] = useState({
-        length: false, upper: false, lower: false, number: false
-    });
-    
+    const [requirements, setRequirements] = useState({ length: false, upper: false, lower: false, number: false });
     const [isOtpSent, setIsOtpSent] = useState(false);
-    const [timer, setTimer] = useState(60); 
+    const [timer, setTimer] = useState(60);
     const [isTimedOut, setIsTimedOut] = useState(false);
     const navigate = useNavigate();
 
@@ -54,20 +50,41 @@ const ForgotPassword = () => {
         else setStrength({ label: 'Strong', color: '#22c55e', score: 4 });
     };
 
+
     const handleSendOTP = async () => {
         if (!email) return Swal.fire('Error', 'Please enter your email', 'error');
         const normalizedEmail = email.trim().toLowerCase();
         try {
             const res = await axios.post('http://localhost:5000/api/send-otp', { email: normalizedEmail });
             if (res.status === 200) {
-                setIsOtpSent(true); 
+                setIsOtpSent(true);
                 setTimer(60);
                 setIsTimedOut(false);
-                setOtp(''); 
+                setOtp('');
                 Swal.fire({ icon: 'success', title: 'Sent!', text: 'OTP has been sent to your email.' });
             }
         } catch (error) {
-            Swal.fire({ icon: 'error', title: 'Account Not Found', text: 'Email is not registered.' });
+            // If backend returns unverified, show SweetAlert with link to Verification
+            if (error.response && error.response.data && error.response.data.message === 'Unverified') {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Account Not Verified',
+                    html: 'Your account is not yet verified.<br><br><a href="#" id="verify-link">Go to Verify Account</a>',
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        const link = document.getElementById('verify-link');
+                        if (link) {
+                            link.onclick = (e) => {
+                                e.preventDefault();
+                                Swal.close();
+                                navigate('/verify-account', { state: { email } });
+                            };
+                        }
+                    }
+                });
+            } else {
+                Swal.fire({ icon: 'error', title: 'Account Not Found', text: 'Email is not registered.' });
+            }
         }
     };
 
@@ -113,69 +130,64 @@ const ForgotPassword = () => {
                 <div className="auth-branding">
                     <h1 className="recovery-side-text">Account Recovery</h1>
                 </div>
-                
-                <div className="recovery-form-container">
+                <div className="recovery-form-container compact-recovery-form">
                     <h2 className="main-recovery-title">
                         {step === 1 ? "Forgot your Password?" : "Reset Password"}
                     </h2>
-
                     <div className="central-column-stack">
                         {step === 1 ? (
                             <div className="step-content fade-in">
-                                <div className={`input-field-wrapper ${isOtpSent ? 'disabled-input-gray' : ''}`}>
+                                <div className="input-field-wrapper">
                                     <Mail size={18} className="field-icon-main" />
-                                    <input 
-                                        type="email" 
-                                        placeholder="Enter your email" 
-                                        className="centered-input" 
-                                        value={email} 
-                                        onChange={(e) => setEmail(e.target.value)} 
-                                        disabled={isOtpSent}
+                                    <input
+                                        type="email"
+                                        placeholder="Enter your email"
+                                        className="centered-input"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        autoFocus
                                     />
                                 </div>
-
-                                <button 
-                                    className="blue-action-btn" 
+                                <button
+                                    className="blue-action-btn"
                                     onClick={handleSendOTP}
                                     disabled={isOtpSent}
                                     style={isOtpSent ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
                                 >
                                     Send OTP
                                 </button>
-
-                                {isOtpSent && (
-                                    <div className="otp-sent-area">
-                                        <div className={`timer-badge ${isTimedOut ? 'timeout-text' : ''}`}>
-                                            <Clock size={16} />
-                                            <span>
-                                                {isTimedOut ? 'OTP timed out, click Resend OTP button' : `Code expires in ${timer}s`}
-                                            </span>
-                                        </div>
-                                        
-                                        <div className="input-field-wrapper">
-                                            <KeyRound size={18} className="field-icon-main" />
-                                            <input 
-                                                type="text" 
-                                                placeholder="Enter OTP" 
-                                                className="centered-input" 
-                                                value={otp} 
-                                                onChange={(e) => setOtp(e.target.value)} 
-                                                maxLength={4} 
-                                            />
-                                        </div>
-
-                                        <button className="blue-action-btn" onClick={handleVerifyOTP}>
-                                            Verify OTP
-                                        </button>
-
-                                        <div className="resend-container">
-                                            <span className="resend-text">Didn't get an OTP? </span>
-                                            <button className="resend-link-btn" onClick={handleSendOTP}>
-                                                <RotateCcw size={14} /> <b><u>Resend</u></b>
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
+                                <div className="input-field-wrapper">
+                                    <KeyRound size={18} className="field-icon-main" />
+                                    <input
+                                        type="text"
+                                        placeholder="Enter OTP"
+                                        className="centered-input"
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value)}
+                                        maxLength={4}
+                                        disabled={!isOtpSent}
+                                    />
+                                </div>
+                                <button
+                                    className="blue-action-btn"
+                                    onClick={handleVerifyOTP}
+                                    disabled={!isOtpSent}
+                                    style={!isOtpSent ? { opacity: 0.6, cursor: 'not-allowed' } : {}}
+                                >
+                                    Verify OTP
+                                </button>
+                                <div className="timer-badge" style={{ marginTop: 8 }}>
+                                    <Clock size={16} />
+                                    <span>
+                                        {isOtpSent ? (isTimedOut ? 'OTP timed out, click Resend OTP' : `Code expires in ${timer}s`) : 'Enter email and click Send OTP'}
+                                    </span>
+                                </div>
+                                <div className="resend-container">
+                                    <span className="resend-text">Didn't get an OTP? </span>
+                                    <button className="resend-link-btn" onClick={handleSendOTP} disabled={!isOtpSent || !isTimedOut}>
+                                        <RotateCcw size={14} /> <b><u>Resend</u></b>
+                                    </button>
+                                </div>
                             </div>
                         ) : (
                             <div className="step-content fade-in">

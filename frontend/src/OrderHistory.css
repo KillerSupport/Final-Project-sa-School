@@ -1,0 +1,515 @@
+.order-history-container {
+    min-height: 100vh;
+    background: url('/isda_bg.png') no-repeat center center fixed;
+    background-size: cover;
+    padding: 30px 20px;
+}
+
+.back-button {
+    background: white;
+    color: #333;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    transition: all 0.3s ease;
+}
+
+.back-button:hover {
+    transform: translateX(-4px);
+}
+
+.page-title {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    color: white;
+    margin-bottom: 30px;
+}
+
+.page-title h1 {
+    font-size: 36px;
+    margin: 0;
+}
+
+.user-profile-section {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    margin-bottom: 30px;
+    max-width: 800px;
+}
+
+.profile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.profile-header h2 {
+    margin: 0;
+    color: #333;
+}
+
+.btn-edit-profile {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background 0.3s ease;
+}
+
+.btn-edit-profile:hover {
+    background: #1d4ed8;
+}
+
+.profile-info {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+}
+
+.profile-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.profile-item span:first-child {
+    font-weight: 600;
+    color: #6b7280;
+}
+
+.discount-active {
+    color: #059669;
+    font-weight: 600;
+}
+
+.discount-inactive {
+    color: #6b7280;
+}
+
+.id-uploaded {
+    color: #059669;
+    font-weight: 600;
+}
+
+.id-missing {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    color: #333;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6b7280;
+}
+
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.form-group label {
+    font-weight: 600;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-group input[type="checkbox"] {
+    width: auto;
+}
+
+.form-group input[type="file"] {
+    padding: 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+.current-id {
+    font-size: 14px;
+    color: #059669;
+    margin-top: 5px;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.btn-cancel {
+    background: #6b7280;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-submit {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-submit:disabled {
+    background: #9ca3af;
+    cursor: not-allowed;
+}
+
+.no-orders {
+    background: white;
+    padding: 60px 20px;
+    border-radius: 16px;
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.no-orders svg {
+    color: #d1d5db;
+    margin-bottom: 20px;
+}
+
+.no-orders h2 {
+    color: #333;
+    font-size: 24px;
+    margin: 0 0 10px 0;
+}
+
+.no-orders p {
+    color: #666;
+    margin-bottom: 30px;
+}
+
+.btn-start-shopping {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-start-shopping:hover {
+    background: #1d4ed8;
+}
+
+/* Orders List */
+.orders-list {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.order-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+}
+
+.order-card:hover {
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15);
+}
+
+.order-header {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 20px;
+    align-items: center;
+    cursor: pointer;
+    transition: background 0.3s ease;
+}
+
+.order-header:hover {
+    background: #f9fafb;
+}
+
+.order-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.order-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.order-id {
+    font-weight: 700;
+    color: #333;
+    font-size: 16px;
+}
+
+.order-status {
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.order-date {
+    color: #999;
+    font-size: 13px;
+    margin: 0;
+}
+
+.order-summary-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.summary-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    font-size: 14px;
+}
+
+.summary-item .label {
+    color: #666;
+}
+
+.summary-item .amount {
+    font-weight: 700;
+    color: #059669;
+}
+
+.summary-item .address {
+    color: #333;
+    text-align: right;
+    font-weight: 500;
+    max-width: 250px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.expand-icon {
+    color: #999;
+    transition: transform 0.3s ease;
+}
+
+.expand-icon.expanded {
+    transform: rotate(180deg);
+}
+
+/* Order Details */
+.order-details {
+    border-top: 2px solid #e5e7eb;
+    padding: 20px;
+    background: #f9fafb;
+}
+
+.details-header {
+    margin-bottom: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.details-header h3 {
+    color: #333;
+    font-size: 16px;
+    margin: 0;
+}
+
+.btn-view-receipt {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background-color 0.3s ease;
+}
+
+.btn-view-receipt:hover {
+    background: #45a049;
+}
+
+.items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.detail-item {
+    display: grid;
+    grid-template-columns: 60px 1fr 1fr;
+    gap: 15px;
+    align-items: center;
+    padding: 12px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+.item-image {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #f3f4f6;
+}
+
+.item-details h4 {
+    color: #333;
+    margin: 0 0 4px 0;
+    font-size: 14px;
+}
+
+.item-details p {
+    color: #999;
+    font-size: 12px;
+    margin: 0;
+}
+
+.item-pricing {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+    text-align: right;
+}
+
+.item-pricing .price {
+    color: #059669;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.item-pricing .total {
+    color: #666;
+    font-size: 12px;
+}
+
+.loading-details {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
+.loading {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 18px;
+}
+
+@media (max-width: 768px) {
+    .order-header {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+
+    .order-summary-info {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+
+    .summary-item .address {
+        max-width: 150px;
+    }
+
+    .page-title {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .page-title h1 {
+        font-size: 28px;
+    }
+
+    .detail-item {
+        grid-template-columns: 50px 1fr;
+        gap: 12px;
+    }
+
+    .item-pricing {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+}

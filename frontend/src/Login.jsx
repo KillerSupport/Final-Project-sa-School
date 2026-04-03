@@ -20,14 +20,23 @@ const Login = () => {
                 password 
             });
             
+            // Store user data in localStorage
+            localStorage.setItem('user', JSON.stringify(res.data.user));
+            
             Swal.fire({
                 title: 'Welcome Back!',
                 text: 'Login Successful',
                 icon: 'success',
-                confirmButtonColor: '#2563eb'
+                confirmButtonColor: '#2563eb',
+                timer: 1500
             });
 
-            navigate('/home'); 
+            const roleName = (res.data?.user?.role_name || '').toLowerCase();
+            if (roleName === 'admin') {
+                navigate('/admin-dashboard');
+            } else {
+                navigate('/catalog');
+            }
         } catch (err) {
             if (err.response && err.response.status === 403) {
                 Swal.fire({

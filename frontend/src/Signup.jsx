@@ -10,6 +10,7 @@ const Signup = () => {
         firstName: '', middleName: '', lastName: '', suffix: '', gender: '',
         birthday: '', contact: '', address: '', email: '', password: '', confirmPassword: ''
     });
+    const [showDatePicker, setShowDatePicker] = useState(false);
 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -17,29 +18,23 @@ const Signup = () => {
     const [requirements, setRequirements] = useState({ length: false, upper: false, lower: false, number: false });
     const [strength, setStrength] = useState({ label: '', color: '', score: 0 });
 
-    const formatBirthday = (value) => {
-        let val = value.replace(/\D/g, ''); 
-        if (val.length >= 2) {
-            let month = parseInt(val.slice(0, 2));
-            if (month > 12) month = 12;
-            if (month === 0 && val.length === 2) month = 1;
-            val = month.toString().padStart(2, '0') + val.slice(2);
-        }
-        if (val.length >= 4) {
-            let day = parseInt(val.slice(2, 4));
-            if (day > 31) day = 31;
-            if (day === 0 && val.length === 4) day = 1;
-            val = val.slice(0, 2) + day.toString().padStart(2, '0') + val.slice(4);
-        }
-        if (val.length <= 2) return val;
-        if (val.length <= 4) return `${val.slice(0, 2)} / ${val.slice(2)}`;
-        return `${val.slice(0, 2)} / ${val.slice(2, 4)} / ${val.slice(4, 8)}`;
+
+    // Helper to get min/max date for 18+ years old
+    const getMaxBirthday = () => {
+        const today = new Date();
+        today.setFullYear(today.getFullYear() - 18);
+        return today.toISOString().split('T')[0];
+    };
+    const getMinBirthday = () => {
+        // Optional: set a reasonable min, e.g. 100 years ago
+        const min = new Date();
+        min.setFullYear(min.getFullYear() - 100);
+        return min.toISOString().split('T')[0];
     };
 
     const handleInputChange = (e) => {
         let { name, value } = e.target;
-        if (name === 'contact') value = value.replace(/\D/g, ''); 
-        if (name === 'birthday') value = formatBirthday(value);
+        if (name === 'contact') value = value.replace(/\D/g, '');
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
@@ -61,27 +56,28 @@ const Signup = () => {
 
     const handleSignup = async () => {
         const { firstName, lastName, birthday, contact, address, email, password, confirmPassword } = formData;
-        
         if (!firstName || !lastName || !birthday || !contact || !address || !email || !password) {
             return Swal.fire('Missing Details', 'Please fill out all required fields (*)', 'warning');
         }
-
+        // Validate birthday is within allowed range
+        const minDate = getMinBirthday();
+        const maxDate = getMaxBirthday();
+        if (birthday < minDate || birthday > maxDate) {
+            return Swal.fire('Invalid Birthday', `You must be at least 18 years old to sign up.`, 'error');
+        }
         const allMet = Object.values(requirements).every(Boolean);
         if (!allMet) {
             return Swal.fire('Weak Password', 'Please meet all password requirements.', 'error');
         }
-
         if (password !== confirmPassword) {
             return Swal.fire('Error', 'Passwords do not match.', 'error');
         }
-
         try {
             const normalizedEmail = email.toLowerCase().trim();
             await axios.post('http://localhost:5000/api/signup', { 
                 ...formData, 
                 email: normalizedEmail 
             });
-            
             Swal.fire('Success', 'Account created! Check your email for OTP.', 'success').then(() => {
                 navigate('/verify', { state: { email: normalizedEmail } });
             });
@@ -100,7 +96,18 @@ const Signup = () => {
                         <div className="input-group col-2"><label>Middle Name</label><input type="text" name="middleName" placeholder="Middle Name" onChange={handleInputChange} /></div>
                         <div className="input-group col-4"><label>Last Name *</label><input type="text" name="lastName" placeholder="Last Name" onChange={handleInputChange} required /></div>
                         <div className="input-group col-2"><label>Suffix</label><input type="text" name="suffix" placeholder="Jr." onChange={handleInputChange} /></div>
-                        <div className="input-group col-5"><label>Birthday *</label><input type="text" name="birthday" value={formData.birthday} placeholder="MM / DD / YYYY" maxLength={14} onChange={handleInputChange} /></div>
+                        <div className="input-group col-5 birthday-group">
+                            <label>Birthday *</label>
+                            <input
+                                type="date"
+                                name="birthday"
+                                value={formData.birthday}
+                                min={getMinBirthday()}
+                                max={getMaxBirthday()}
+                                onChange={handleInputChange}
+                                required
+                            />
+                        </div>
                         <div className="input-group col-2"><label>Gender</label><input type="text" name="gender" placeholder="Gender" value={formData.gender} onChange={handleInputChange} /></div>
                         <div className="input-group col-5"><label>Contact *</label><input type="text" name="contact" value={formData.contact} placeholder="09..." maxLength={11} onChange={handleInputChange} /></div>
                         <div className="input-group col-12"><label>Address *</label><input type="text" name="address" placeholder="Barangay, City, Province" onChange={handleInputChange} /></div>
