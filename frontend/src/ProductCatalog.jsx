@@ -22,7 +22,6 @@ const ProductCatalog = () => {
 
     const navigate = useNavigate();
 
-    // ✅ Safe user parsing
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userId = user?.user_id || null;
     const userRole = user?.role_name || null;
@@ -45,7 +44,6 @@ const ProductCatalog = () => {
         confirmPassword: ''
     });
 
-    // ================= LOGOUT =================
     const handleLogout = async () => {
         try {
             await axios.post('http://localhost:5000/api/logout');
@@ -54,7 +52,6 @@ const ProductCatalog = () => {
         navigate('/');
     };
 
-    // ================= FETCH =================
     useEffect(() => {
         fetchCategories();
         fetchProducts();
@@ -90,17 +87,21 @@ const ProductCatalog = () => {
             setProducts(res.data || []);
         } catch (err) {
             console.error(err);
-            setProducts([]); // ✅ prevent crash
+            setProducts([]);
         } finally {
             setLoading(false);
         }
     };
 
-    // ================= CART =================
     const handleAddToCart = async (product) => {
         if (!userId) {
             Swal.fire('Login Required', 'Please login first', 'warning');
             navigate('/');
+            return;
+        }
+
+        if (product.is_deleted || Number(product.stock || 0) <= 0) {
+            Swal.fire('Unavailable', 'This product is not available for purchase.', 'info');
             return;
         }
 
@@ -117,7 +118,6 @@ const ProductCatalog = () => {
         }
     };
 
-    // ================= PROFILE =================
     const openProfileModal = async () => {
         if (!userId) return;
 
@@ -137,7 +137,7 @@ const ProductCatalog = () => {
 
     const handleProfileEditChange = (e) => {
         const { name, value } = e.target;
-        setProfileEdit(prev => ({ ...prev, [name]: value }));
+        setProfileEdit((prev) => ({ ...prev, [name]: value }));
     };
 
     const handleProfileSave = async (e) => {
@@ -155,10 +155,9 @@ const ProductCatalog = () => {
         }
     };
 
-    // ================= PASSWORD =================
     const handlePasswordEditChange = (e) => {
         const { name, value } = e.target;
-        setPasswordEdit(prev => ({ ...prev, [name]: value }));
+        setPasswordEdit((prev) => ({ ...prev, [name]: value }));
     };
 
     const handlePasswordSave = async (e) => {
@@ -186,11 +185,8 @@ const ProductCatalog = () => {
         }
     };
 
-    // ================= UI =================
     return (
         <div className="catalog-container">
-
-            {/* HEADER */}
             <div className="catalog-header">
                 <h1>TongTong Fish Culture</h1>
 
@@ -229,60 +225,106 @@ const ProductCatalog = () => {
                 </div>
             </div>
 
-            {/* PRODUCTS */}
             <div className="product-grid">
                 {loading ? (
                     <p>Loading...</p>
                 ) : products.length === 0 ? (
                     <p>No products found</p>
                 ) : (
-                    products.map(product => (
-                        <div key={product.product_id} className="product-card">
-                            <img
-                                src={product.image_url || 'https://via.placeholder.com/200'}
-                                alt={product.name}
-                                onClick={() => navigate(`/product/${product.product_id}`)}
-                            />
+                    products.map((product) => {
+                        const isDiscontinued = Boolean(product.is_deleted);
+                        const isOutOfStock = !isDiscontinued && Number(product.stock || 0) <= 0;
+                        const cardClassName = [
+                            'product-card',
+                            isDiscontinued ? 'discontinued' : '',
+                            isOutOfStock ? 'out-of-stock' : ''
+                        ]
+                            .filter(Boolean)
+                            .join(' ');
+                        const stockLabel = isDiscontinued
+                            ? 'Discontinued'
+                            : isOutOfStock
+                              ? 'Out of stock'
+                              : `${product.stock} in stock`;
+                        const badgeClassName = isDiscontinued
+                            ? 'deleted'
+                            : isOutOfStock
+                              ? 'empty'
+                              : 'available';
 
-                            <h3>{product.name}</h3>
-                            <p>₱{Number(product.price || 0).toFixed(2)}</p>
-                            <p>Stock: {product.stock}</p>
+                        return (
+                            <div key={product.product_id} className={cardClassName}>
+                                <div className="product-image" onClick={() => navigate(`/product/${product.product_id}`)}>
+                                    <img
+                                        src={product.image_url || 'https://via.placeholder.com/200'}
+                                        alt={product.name}
+                                    />
+                                    <span className={`stock-badge ${badgeClassName}`}>{stockLabel}</span>
+                                </div>
 
-                            {userRole === 'admin' ? (
-                                <>
-                                    <button
-                                        onClick={() => {
-                                            localStorage.setItem('adminActiveTab', 'products');
-                                            navigate('/admin-dashboard');
-                                        }}
-                                    >
-                                        Edit
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            localStorage.setItem('adminActiveTab', 'products');
-                                            navigate('/admin-dashboard');
-                                        }}
-                                    >
-                                        Delete
-                                    </button>
-                                </>
-                            ) : (
-                                <>
-                                    <button onClick={() => navigate(`/product/${product.product_id}`)}>View</button>
-                                    <button onClick={() => handleAddToCart(product)}>Add to Cart</button>
-                                </>
-                            )}
-                        </div>
-                    ))
+                                <div className="product-info">
+                                    <h4>{product.name}</h4>
+                                    <div className="category">{product.category}</div>
+                                    <div className="description">
+                                        {isDiscontinued
+                                            ? 'This product has been discontinued.'
+                                            : product.description || 'No description available.'}
+                                    </div>
+
+                                    <div className="product-footer">
+                                        <div className="price">₱{Number(product.price || 0).toFixed(2)}</div>
+                                        <div className="stock-info">
+                                            <span className={`stock-badge ${badgeClassName}`}>{stockLabel}</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="product-actions">
+                                        <button
+                                            className="btn-details"
+                                            onClick={() => navigate(`/product/${product.product_id}`)}
+                                        >
+                                            View
+                                        </button>
+
+                                        {userRole === 'admin' ? (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        localStorage.setItem('adminActiveTab', 'products');
+                                                        navigate('/admin-dashboard');
+                                                    }}
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        localStorage.setItem('adminActiveTab', 'products');
+                                                        navigate('/admin-dashboard');
+                                                    }}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <button
+                                                className="btn-cart"
+                                                onClick={() => handleAddToCart(product)}
+                                                disabled={isDiscontinued || isOutOfStock}
+                                            >
+                                                Add to Cart
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })
                 )}
             </div>
 
-            {/* PROFILE MODAL */}
             {showProfileModal && (
                 <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-
                         <h3>Edit Profile</h3>
 
                         {profileLoading ? (
@@ -290,9 +332,24 @@ const ProductCatalog = () => {
                         ) : (
                             <>
                                 <form onSubmit={handleProfileSave}>
-                                    <input name="first_name" value={profileEdit.first_name || ''} onChange={handleProfileEditChange} placeholder="First Name" />
-                                    <input name="last_name" value={profileEdit.last_name || ''} onChange={handleProfileEditChange} placeholder="Last Name" />
-                                    <input name="email" value={profileEdit.email || ''} onChange={handleProfileEditChange} placeholder="Email" />
+                                    <input
+                                        name="first_name"
+                                        value={profileEdit.first_name || ''}
+                                        onChange={handleProfileEditChange}
+                                        placeholder="First Name"
+                                    />
+                                    <input
+                                        name="last_name"
+                                        value={profileEdit.last_name || ''}
+                                        onChange={handleProfileEditChange}
+                                        placeholder="Last Name"
+                                    />
+                                    <input
+                                        name="email"
+                                        value={profileEdit.email || ''}
+                                        onChange={handleProfileEditChange}
+                                        placeholder="Email"
+                                    />
 
                                     <button type="submit">Save</button>
                                 </form>
@@ -300,9 +357,24 @@ const ProductCatalog = () => {
                                 <h4>Change Password</h4>
 
                                 <form onSubmit={handlePasswordSave}>
-                                    <input type="password" name="oldPassword" placeholder="Old Password" onChange={handlePasswordEditChange} />
-                                    <input type="password" name="newPassword" placeholder="New Password" onChange={handlePasswordEditChange} />
-                                    <input type="password" name="confirmPassword" placeholder="Confirm Password" onChange={handlePasswordEditChange} />
+                                    <input
+                                        type="password"
+                                        name="oldPassword"
+                                        placeholder="Old Password"
+                                        onChange={handlePasswordEditChange}
+                                    />
+                                    <input
+                                        type="password"
+                                        name="newPassword"
+                                        placeholder="New Password"
+                                        onChange={handlePasswordEditChange}
+                                    />
+                                    <input
+                                        type="password"
+                                        name="confirmPassword"
+                                        placeholder="Confirm Password"
+                                        onChange={handlePasswordEditChange}
+                                    />
 
                                     <button type="submit">
                                         {passwordLoading ? 'Saving...' : 'Change Password'}
@@ -310,11 +382,9 @@ const ProductCatalog = () => {
                                 </form>
                             </>
                         )}
-
                     </div>
                 </div>
             )}
-
         </div>
     );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
@@ -9,47 +9,41 @@ import './AdminDashboard.css';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
-    const productCategoryOptions = ['Salt Water Fish', 'Fresh Water Fish', 'Supplies'];
-    const getInitialTab = () => {
-        const saved = localStorage.getItem('adminActiveTab') || 'dashboard';
-        return saved === 'deleted-products' ? 'products' : saved;
-    };
+    // Tab state persistence
+    const getInitialTab = () => localStorage.getItem('adminActiveTab') || 'dashboard';
     const [activeTab, setActiveTab] = useState(getInitialTab());
-    const [productsView, setProductsView] = useState('active');
     const [products, setProducts] = useState([]);
-    const [deletedProducts, setDeletedProducts] = useState([]);
-    const [productSearch, setProductSearch] = useState('');
-    const [productSortOrder, setProductSortOrder] = useState('newest');
-    const [deletedProductSearch, setDeletedProductSearch] = useState('');
-    const [deletedProductSortOrder, setDeletedProductSortOrder] = useState('a-z');
-    const [lowStockSearch, setLowStockSearch] = useState('');
     const [orders, setOrders] = useState([]);
     const [lowStockProducts, setLowStockProducts] = useState([]);
     const [cancellationRequests, setCancellationRequests] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
-    const [restoreMode, setRestoreMode] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
         description: '',
+        petCareContent: '',
         category: '',
         price: '',
         stock: '',
         lowStockThreshold: 5,
-        imageUrl: ''
+        imageUrl: '',
+        compatibility: ''
     });
     const [editingId, setEditingId] = useState(null);
     const [imagePreview, setImagePreview] = useState('');
     const [uploading, setUploading] = useState(false);
 
+    // Persist tab on change
     useEffect(() => {
         localStorage.setItem('adminActiveTab', activeTab);
     }, [activeTab]);
 
+    // Analytics state
     const [bestSellers, setBestSellers] = useState([]);
     const [analyticsPeriod, setAnalyticsPeriod] = useState('weekly');
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
+    // Fetch best sellers
     const fetchBestSellers = async (period = 'weekly') => {
         setAnalyticsLoading(true);
         try {
@@ -62,10 +56,12 @@ const AdminDashboard = () => {
         }
     };
 
+    // Fetch on mount and when period changes
     useEffect(() => {
         if (activeTab === 'dashboard') fetchBestSellers(analyticsPeriod);
     }, [activeTab, analyticsPeriod]);
 
+    // Fetch current background on tab open
     useEffect(() => {
         if (activeTab === 'website-settings') {
             axios.get('http://localhost:5000/api/background-settings/backgroundImage')
@@ -73,7 +69,6 @@ const AdminDashboard = () => {
                 .catch(() => setWebsiteBgUrl(''));
         }
     }, [activeTab]);
-
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileEdit, setProfileEdit] = useState({ first_name: '', last_name: '', email: '' });
     const [profileLoading, setProfileLoading] = useState(false);
@@ -87,9 +82,9 @@ const AdminDashboard = () => {
     const userRole = user?.role_name || 'Admin';
     const adminName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Admin';
     const [profileImageFile, setProfileImageFile] = useState(null);
-    const profileImageStorageKey = userId ? `adminProfileImage:${userId}` : 'adminProfileImage';
-    const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
+    const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem('adminProfileImage') || user?.profile_image_url || '');
 
+    // Website background state
     const [websiteBgFile, setWebsiteBgFile] = useState(null);
     const [websiteBgUrl, setWebsiteBgUrl] = useState('');
     const [websiteBgLoading, setWebsiteBgLoading] = useState(false);
@@ -100,80 +95,6 @@ const AdminDashboard = () => {
         navigate('/');
     };
 
-    const displayProducts = useMemo(() => {
-        const grouped = new Map();
-
-        (products || []).forEach((product) => {
-            const key = `${String(product.name || '').trim().toLowerCase()}|${String(product.category || '').trim().toLowerCase()}|${Number(product.price || 0).toFixed(2)}`;
-            if (!grouped.has(key)) {
-                grouped.set(key, { ...product, stock: Number(product.stock || 0) });
-            } else {
-                const existing = grouped.get(key);
-                existing.stock = Number(existing.stock || 0) + Number(product.stock || 0);
-                if (!existing.image_url && product.image_url) {
-                    existing.image_url = product.image_url;
-                }
-            }
-        });
-
-        return Array.from(grouped.values());
-    }, [products]);
-
-    const visibleProducts = useMemo(() => {
-        const searchTerm = productSearch.trim().toLowerCase();
-        const filtered = displayProducts.filter((product) => {
-            if (!searchTerm) {
-                return true;
-            }
-
-            return (
-                String(product.name || '').toLowerCase().includes(searchTerm) ||
-                String(product.category || '').toLowerCase().includes(searchTerm)
-            );
-        });
-
-        return [...filtered].sort((left, right) => {
-            if (productSortOrder === 'a-z') {
-                return String(left.name || '').localeCompare(String(right.name || ''));
-            }
-
-            if (productSortOrder === 'z-a') {
-                return String(right.name || '').localeCompare(String(left.name || ''));
-            }
-
-            const leftTime = new Date(left.created_at || 0).getTime();
-            const rightTime = new Date(right.created_at || 0).getTime();
-
-            if (productSortOrder === 'oldest') {
-                return leftTime - rightTime;
-            }
-
-            return rightTime - leftTime;
-        });
-    }, [displayProducts, productSearch, productSortOrder]);
-
-    const visibleDeletedProducts = useMemo(() => {
-        const searchTerm = deletedProductSearch.trim().toLowerCase();
-        const filtered = deletedProducts.filter((product) => {
-            if (!searchTerm) {
-                return true;
-            }
-
-            return (
-                String(product.name || '').toLowerCase().includes(searchTerm) ||
-                String(product.category || '').toLowerCase().includes(searchTerm)
-            );
-        });
-
-        return [...filtered].sort((left, right) => {
-            if (deletedProductSortOrder === 'z-a') {
-                return String(right.name || '').localeCompare(String(left.name || ''));
-            }
-
-            return String(left.name || '').localeCompare(String(right.name || ''));
-        });
-    }, [deletedProducts, deletedProductSearch, deletedProductSortOrder]);
-
     const fetchProducts = async () => {
         try {
             const response = await axios.get('http://localhost:5000/api/products');
@@ -183,18 +104,6 @@ const AdminDashboard = () => {
             Swal.fire('Error', 'Failed to fetch products', 'error');
         } finally {
             setLoading(false);
-        }
-    };
-
-    const fetchDeletedProducts = async () => {
-        try {
-            const response = await axios.get('http://localhost:5000/api/admin/deleted-products', {
-                params: { userId }
-            });
-            setDeletedProducts(response.data || []);
-        } catch (error) {
-            setDeletedProducts([]);
-            Swal.fire('Error', 'Failed to fetch deleted products', 'error');
         }
     };
 
@@ -212,11 +121,8 @@ const AdminDashboard = () => {
 
     const fetchLowStockProducts = async () => {
         try {
-            const response = await axios.get('http://localhost:5000/api/products');
-            const sortedByStock = (response.data || [])
-                .filter((product) => Number(product.is_deleted || 0) === 0)
-                .sort((a, b) => Number(a.stock || 0) - Number(b.stock || 0));
-            setLowStockProducts(sortedByStock);
+            const response = await axios.get('http://localhost:5000/api/low-stock-products');
+            setLowStockProducts(response.data || []);
         } catch (error) {
             setLowStockProducts([]);
             Swal.fire('Error', 'Failed to fetch low stock products', 'error');
@@ -225,40 +131,8 @@ const AdminDashboard = () => {
         }
     };
 
-    const lowStockAlertCount = useMemo(() => {
-        return (lowStockProducts || []).filter(
-            (product) => Number(product.stock || 0) <= 20
-        ).length;
-    }, [lowStockProducts]);
 
-    const visibleLowStockProducts = useMemo(() => {
-        const searchTerm = lowStockSearch.trim().toLowerCase();
-
-        const filtered = (lowStockProducts || []).filter((product) => {
-            if (Number(product.stock || 0) > 20) {
-                return false;
-            }
-
-            if (!searchTerm) {
-                return true;
-            }
-
-            return (
-                String(product.name || '').toLowerCase().includes(searchTerm) ||
-                String(product.category || '').toLowerCase().includes(searchTerm)
-            );
-        });
-
-        return [...filtered].sort((left, right) => {
-            const stockComparison = Number(left.stock || 0) - Number(right.stock || 0);
-            if (stockComparison !== 0) {
-                return stockComparison;
-            }
-
-            return String(left.name || '').localeCompare(String(right.name || ''));
-        });
-    }, [lowStockProducts, lowStockSearch]);
-
+    // Load admin info into profile modal
     const openProfileModal = async () => {
         if (user && user.user_id) {
             setProfileLoading(true);
@@ -269,7 +143,7 @@ const AdminDashboard = () => {
                     last_name: res.data.last_name || '',
                     email: res.data.email || ''
                 });
-                setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
+                setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem('adminProfileImage') || '');
             } catch (err) {
                 Swal.fire('Error', 'Failed to load profile info', 'error');
             } finally {
@@ -281,6 +155,7 @@ const AdminDashboard = () => {
         }
     };
 
+    // Save profile info
     const handleProfileSave = async (e) => {
         e.preventDefault();
 
@@ -309,6 +184,7 @@ const AdminDashboard = () => {
                 });
                 uploadedImageUrl = uploadRes.data.imageUrl;
             }
+
             await axios.put(`http://localhost:5000/api/account/${user.user_id}`, {
                 first_name: profileEdit.first_name,
                 last_name: profileEdit.last_name,
@@ -335,7 +211,7 @@ const AdminDashboard = () => {
             setShowProfileModal(false);
             const updatedUser = { ...user, ...profileEdit, id_image_url: uploadedImageUrl };
             localStorage.setItem('user', JSON.stringify(updatedUser));
-            localStorage.setItem(profileImageStorageKey, uploadedImageUrl || '');
+            localStorage.setItem('adminProfileImage', uploadedImageUrl || '');
             setProfileImageFile(null);
             setPasswordEdit({ oldPassword: '', newPassword: '', confirmPassword: '' });
         } catch (err) {
@@ -359,20 +235,10 @@ const AdminDashboard = () => {
         }
     }, [activeTab]);
 
-    useEffect(() => {
-        fetchLowStockProducts();
-    }, []);
-
-    useEffect(() => {
-        if (activeTab === 'products' && productsView === 'deleted') {
-            fetchDeletedProducts();
-        }
-    }, [activeTab, productsView]);
-
 
     const fetchCancellationRequests = async () => {
         try {
-            const response = await axios.get(`http://localhost:5000/api/admin/cancellation-requests?userId=${userId}`);
+            const response = await axios.get('http://localhost:5000/api/cancellation-requests');
             setCancellationRequests(response.data);
         } catch (error) {
             console.error('Error fetching cancellation requests:', error);
@@ -390,31 +256,23 @@ const AdminDashboard = () => {
         }));
     };
 
-    const handlePriceChange = (e) => {
-        const value = e.target.value.replace(/[^\d.]/g, '');
-        const parts = value.split('.');
-        const normalized = parts.length > 1 ? `${parts[0]}.${parts.slice(1).join('')}` : value;
-        setFormData(prev => ({ ...prev, price: normalized }));
-    };
-
-    const handleStockChange = (e) => {
-        const value = e.target.value.replace(/\D/g, '');
-        setFormData(prev => ({ ...prev, stock: value }));
-    };
-
     const resetForm = () => {
         setFormData({
             name: '',
             description: '',
+            petCareContent: '',
             category: '',
             price: '',
             stock: '',
             lowStockThreshold: 5,
             imageUrl: '',
+            compatibility: '',
+            careDifficulty: 'beginner',
+            lifespan: '',
+            diet: ''
         });
         setImagePreview('');
         setEditingId(null);
-        setRestoreMode(false);
     };
 
     const handleImageUpload = async (e) => {
@@ -465,33 +323,20 @@ const AdminDashboard = () => {
         }
 
         try {
-            if (restoreMode && editingId) {
-                await axios.put(`http://localhost:5000/api/products/${editingId}/restore`, {
-                    userId,
-                    name: formData.name,
-                    description: formData.description,
-                    category: formData.category,
-                    price: parseFloat(formData.price),
-                    stock: parseInt(formData.stock),
-                    lowStockThreshold: parseInt(formData.lowStockThreshold) || 5,
-                    imageUrl: formData.imageUrl
-                });
-                Swal.fire({
-                    title: 'Success!',
-                    text: 'Product restored successfully',
-                    icon: 'success',
-                    timer: 1500,
-                    confirmButtonColor: '#2563eb'
-                });
-            } else if (editingId) {
+            if (editingId) {
                 await axios.put(`http://localhost:5000/api/products/${editingId}`, {
                     name: formData.name,
                     description: formData.description,
+                    petCareContent: formData.petCareContent,
                     category: formData.category,
                     price: parseFloat(formData.price),
                     stock: parseInt(formData.stock),
                     lowStockThreshold: parseInt(formData.lowStockThreshold) || 5,
                     imageUrl: formData.imageUrl,
+                    compatibility: formData.compatibility,
+                    careDifficulty: formData.careDifficulty,
+                    lifespan: formData.lifespan,
+                    diet: formData.diet,
                     userId
                 });
                 Swal.fire({
@@ -505,11 +350,16 @@ const AdminDashboard = () => {
                 await axios.post('http://localhost:5000/api/products', {
                     name: formData.name,
                     description: formData.description,
+                    petCareContent: formData.petCareContent,
                     category: formData.category,
                     price: parseFloat(formData.price),
                     stock: parseInt(formData.stock),
                     lowStockThreshold: parseInt(formData.lowStockThreshold) || 5,
                     imageUrl: formData.imageUrl,
+                    compatibility: formData.compatibility,
+                    careDifficulty: formData.careDifficulty,
+                    lifespan: formData.lifespan,
+                    diet: formData.diet,
                     userId
                 });
                 Swal.fire({
@@ -524,7 +374,6 @@ const AdminDashboard = () => {
             resetForm();
             setShowModal(false);
             fetchProducts();
-            fetchDeletedProducts();
         } catch (err) {
             Swal.fire({
                 title: 'Error',
@@ -539,31 +388,19 @@ const AdminDashboard = () => {
         setFormData({
             name: product.name,
             description: product.description,
+            petCareContent: product.pet_care_content || '',
             category: product.category,
             price: product.price,
             stock: product.stock,
             lowStockThreshold: product.low_stock_threshold || 5,
             imageUrl: product.image_url,
+            compatibility: product.compatibility || '',
+            careDifficulty: product.care_difficulty || 'beginner',
+            lifespan: product.lifespan || '',
+            diet: product.diet || ''
         });
         setImagePreview(product.image_url);
         setEditingId(product.product_id);
-        setRestoreMode(false);
-        setShowModal(true);
-    };
-
-    const openRestoreEditModal = (product) => {
-        setFormData({
-            name: product.name,
-            description: product.description || '',
-            category: product.category || '',
-            price: product.price,
-            stock: product.stock,
-            lowStockThreshold: product.low_stock_threshold || 5,
-            imageUrl: product.image_url || ''
-        });
-        setImagePreview(product.image_url || '');
-        setEditingId(product.product_id);
-        setRestoreMode(true);
         setShowModal(true);
     };
 
@@ -788,13 +625,8 @@ const AdminDashboard = () => {
             <div className="tabs-container">
                 <button className={`tab-button ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
                 <button className={`tab-button ${activeTab === 'products' ? 'active' : ''}`} onClick={() => setActiveTab('products')}>Products</button>
-                <button className={`tab-button tab-button-with-badge ${activeTab === 'low-stock' ? 'active' : ''}`} onClick={() => setActiveTab('low-stock')}>
-                    Low Stock Alerts
-                    {lowStockAlertCount > 0 && (
-                        <span className="tab-alert-badge">{lowStockAlertCount > 99 ? '99+' : lowStockAlertCount}</span>
-                    )}
-                </button>
                 <button className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Order Management</button>
+                <button className={`tab-button ${activeTab === 'low-stock' ? 'active' : ''}`} onClick={() => setActiveTab('low-stock')}>Low Stock Alerts</button>
                 <button className={`tab-button ${activeTab === 'cancellations' ? 'active' : ''}`} onClick={() => setActiveTab('cancellations')}>Cancellation Requests</button>
                 <button className={`tab-button ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics & Reports</button>
                 <button className={`tab-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>User Management</button>
@@ -808,6 +640,11 @@ const AdminDashboard = () => {
                             <Settings size={48} />
                             <div className="dashboard-card-title">Manage Website</div>
                             <div className="dashboard-card-desc">Edit theme, background, and site settings</div>
+                        </div>
+                        <div className="dashboard-card" onClick={() => setActiveTab('low-stock')}>
+                            <Package size={48} />
+                            <div className="dashboard-card-title">Low Stock Alerts</div>
+                            <div className="dashboard-card-desc">View products that need restocking</div>
                         </div>
                         <div className="dashboard-card" onClick={() => setActiveTab('user-logs')}>
                             <Users size={48} />
@@ -830,69 +667,10 @@ const AdminDashboard = () => {
             {activeTab === 'products' && (
                 <div className="admin-content">
                     <div className="section-header">
-                        <h2>{productsView === 'active' ? '🐟 Products' : '🗑️ Deleted Products'}</h2>
-                        <div className="products-header-actions">
-                            {productsView === 'active' && (
-                                <>
-                                    <div className="products-filter-bar">
-                                        <input
-                                            type="text"
-                                            className="products-search-input"
-                                            placeholder="Search name or category"
-                                            value={productSearch}
-                                            onChange={(e) => setProductSearch(e.target.value)}
-                                        />
-                                        <select
-                                            className="products-sort-select"
-                                            value={productSortOrder}
-                                            onChange={(e) => setProductSortOrder(e.target.value)}
-                                        >
-                                            <option value="newest">Newest</option>
-                                            <option value="oldest">Oldest</option>
-                                            <option value="a-z">A-Z</option>
-                                            <option value="z-a">Z-A</option>
-                                        </select>
-                                    </div>
-                                    <button className="btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>Add Product</button>
-                                </>
-                            )}
-                            {productsView === 'deleted' && (
-                                <div className="products-filter-bar">
-                                    <input
-                                        type="text"
-                                        className="products-search-input"
-                                        placeholder="Search name or category"
-                                        value={deletedProductSearch}
-                                        onChange={(e) => setDeletedProductSearch(e.target.value)}
-                                    />
-                                    <select
-                                        className="products-sort-select"
-                                        value={deletedProductSortOrder}
-                                        onChange={(e) => setDeletedProductSortOrder(e.target.value)}
-                                    >
-                                        <option value="a-z">A-Z</option>
-                                        <option value="z-a">Z-A</option>
-                                    </select>
-                                </div>
-                            )}
-                            <div className="products-view-tabs">
-                                <button
-                                    type="button"
-                                    className={`products-view-tab ${productsView === 'active' ? 'active' : ''}`}
-                                    onClick={() => setProductsView('active')}
-                                >
-                                    Products
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`products-view-tab ${productsView === 'deleted' ? 'active' : ''}`}
-                                    onClick={() => setProductsView('deleted')}
-                                >
-                                    Deleted Products
-                                </button>
-                            </div>
-                        </div>
+                        <h2>🐟 Products</h2>
+                        <button className="btn-primary" onClick={() => { resetForm(); setShowModal(true); }}>Add Product</button>
                     </div>
+                    {/* Products Table */}
                     <div className="products-table-container">
                         <table className="products-table">
                             <thead>
@@ -905,43 +683,20 @@ const AdminDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(productsView === 'active' ? visibleProducts.length : visibleDeletedProducts.length) === 0 ? (
+                                {products.length === 0 ? (
                                     <tr>
-                                        <td colSpan="5" className="empty-state">
-                                            {productsView === 'active' ? 'No matching products found' : 'No matching deleted products found'}
-                                        </td>
+                                        <td colSpan="5" className="empty-state">No products found</td>
                                     </tr>
                                 ) : (
-                                    (productsView === 'active' ? visibleProducts : visibleDeletedProducts).map(product => (
+                                    products.map(product => (
                                         <tr key={product.product_id}>
-                                            <td>
-                                                <div className="product-cell">
-                                                    {product.image_url ? (
-                                                        <img
-                                                            src={product.image_url}
-                                                            alt={product.name}
-                                                            className="product-thumb"
-                                                        />
-                                                    ) : (
-                                                        <div className="product-thumb product-thumb-fallback">No Img</div>
-                                                    )}
-                                                    <span className="product-name">{product.name}</span>
-                                                </div>
-                                            </td>
+                                            <td>{product.name}</td>
                                             <td>{product.category}</td>
-                                            <td>₱{Number(product.price).toFixed(2)}</td>
+                                            <td>₱{product.price}</td>
                                             <td>{product.stock}</td>
                                             <td>
-                                                {productsView === 'active' ? (
-                                                    <>
-                                                        <button className="btn-icon edit" onClick={() => handleEdit(product)} title="Edit"><Edit2 size={16} /></button>
-                                                        <button className="btn-icon delete" onClick={() => handleDelete(product.product_id)} title="Delete"><Trash2 size={16} /></button>
-                                                    </>
-                                                ) : (
-                                                    <button className="btn-restore" onClick={() => openRestoreEditModal(product)}>
-                                                        Edit & Restore
-                                                    </button>
-                                                )}
+                                                <button className="btn-icon edit" onClick={() => handleEdit(product)} title="Edit"><Edit2 size={16} /></button>
+                                                <button className="btn-icon delete" onClick={() => handleDelete(product.product_id)} title="Delete"><Trash2 size={16} /></button>
                                             </td>
                                         </tr>
                                     ))
@@ -949,11 +704,12 @@ const AdminDashboard = () => {
                             </tbody>
                         </table>
                     </div>
+                    {/* Add/Edit Product Modal */}
                     {showModal && (
                         <div className="modal-overlay" onClick={() => setShowModal(false)}>
                             <div className="modal-content" onClick={e => e.stopPropagation()}>
                                 <div className="modal-header">
-                                    <h3>{restoreMode ? 'Edit & Restore Product' : editingId ? 'Edit Product' : 'Add Product'}</h3>
+                                    <h3>{editingId ? 'Edit Product' : 'Add Product'}</h3>
                                     <button className="close-button" onClick={() => setShowModal(false)}><X size={24} /></button>
                                 </div>
                                 <form onSubmit={handleSubmit} className="product-form">
@@ -964,50 +720,24 @@ const AdminDashboard = () => {
                                         </div>
                                         <div className="form-group">
                                             <label>Category</label>
-                                            <select name="category" value={formData.category} onChange={handleInputChange} required>
-                                                <option value="" disabled>Select category</option>
-                                                {productCategoryOptions.map((categoryOption) => (
-                                                    <option key={categoryOption} value={categoryOption}>{categoryOption}</option>
-                                                ))}
-                                                {formData.category && !productCategoryOptions.includes(formData.category) && (
-                                                    <option value={formData.category}>{formData.category}</option>
-                                                )}
-                                            </select>
+                                            <input type="text" name="category" value={formData.category} onChange={handleInputChange} required />
                                         </div>
                                         <div className="form-group">
                                             <label>Price</label>
-                                            <div className="money-input-wrap">
-                                                <span className="money-prefix">₱</span>
-                                                <input type="text" inputMode="decimal" name="price" value={formData.price} onChange={handlePriceChange} required />
-                                            </div>
+                                            <input type="number" name="price" value={formData.price} onChange={handleInputChange} required />
                                         </div>
                                         <div className="form-group">
                                             <label>Stock</label>
-                                            <input type="text" inputMode="numeric" name="stock" value={formData.stock} onChange={handleStockChange} required />
+                                            <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} required />
                                         </div>
                                     </div>
                                     <div className="form-group">
                                         <label>Description</label>
                                         <textarea name="description" value={formData.description} onChange={handleInputChange} />
                                     </div>
-                                    <div className="form-group">
-                                        <label>Product Image</label>
-                                        <input type="file" accept="image/*" className="file-input" onChange={handleImageUpload} disabled={uploading} />
-                                        {uploading && <div className="upload-status">Uploading image...</div>}
-                                    </div>
-                                    <div className="form-group">
-                                        <label>Image URL</label>
-                                        <input type="text" name="imageUrl" value={formData.imageUrl} onChange={handleInputChange} placeholder="Image URL will appear here after upload" />
-                                    </div>
-                                    {(imagePreview || formData.imageUrl) && (
-                                        <div className="image-preview-container">
-                                            <label>Preview</label>
-                                            <img className="image-preview" src={imagePreview || formData.imageUrl} alt="Product preview" />
-                                        </div>
-                                    )}
                                     <div className="modal-actions">
                                         <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                                        <button type="submit" className="btn-primary">{restoreMode ? 'Restore Product' : editingId ? 'Update' : 'Add'}</button>
+                                        <button type="submit" className="btn-primary">{editingId ? 'Update' : 'Add'}</button>
                                     </div>
                                 </form>
                             </div>
@@ -1148,17 +878,7 @@ const AdminDashboard = () => {
                 <div className="admin-content">
                     <div className="section-header">
                         <h2>⚠️ Low Stock Alerts</h2>
-                        <p>Only active products with 20 stock or below, sorted from lowest to highest, are shown here</p>
-                    </div>
-
-                    <div className="products-filter-bar low-stock-filter-bar">
-                        <input
-                            type="text"
-                            className="products-search-input"
-                            placeholder="Search name or category"
-                            value={lowStockSearch}
-                            onChange={(e) => setLowStockSearch(e.target.value)}
-                        />
+                        <p>Products that need restocking</p>
                     </div>
 
                     {/* Low Stock Products Table */}
@@ -1166,39 +886,43 @@ const AdminDashboard = () => {
                         <table className="products-table">
                             <thead>
                                 <tr>
-                                    <th>Product</th>
+                                    <th>Product Name</th>
+                                    <th>Category</th>
                                     <th>Current Stock</th>
+                                    <th>Low Stock Threshold</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {visibleLowStockProducts.length === 0 ? (
+                                {lowStockProducts.length === 0 ? (
                                     <tr>
-                                        <td colSpan="2" className="empty-state">No active products found</td>
+                                        <td colSpan="6" className="empty-state">No low stock products</td>
                                     </tr>
                                 ) : (
-                                    visibleLowStockProducts.map(product => (
+                                    lowStockProducts.map(product => (
                                         <tr key={product.product_id}>
+                                            <td className="product-name">{product.name}</td>
+                                            <td>{product.category}</td>
                                             <td>
-                                                <div className="product-cell">
-                                                    {product.image_url ? (
-                                                        <img
-                                                            src={product.image_url}
-                                                            alt={product.name}
-                                                            className="product-thumb"
-                                                        />
-                                                    ) : (
-                                                        <div className="product-thumb product-thumb-fallback">No Img</div>
-                                                    )}
-                                                    <span className="product-name">{product.name}</span>
-                                                </div>
+                                                <span className="stock-badge low-stock">
+                                                    {product.stock}
+                                                </span>
                                             </td>
+                                            <td>{product.low_stock_threshold || 5}</td>
                                             <td>
-                                                <div className="stock-count-wrap">
-                                                    <span className="stock-count-number">
-                                                        {Number.isFinite(Number(product.stock)) ? Number(product.stock) : 0}
-                                                    </span>
-                                                    <span className="stock-badge out-of-stock">Low Stock</span>
-                                                </div>
+                                                <span className="status-badge status-warning">
+                                                    Low Stock
+                                                </span>
+                                            </td>
+                                            <td className="actions">
+                                                <button
+                                                    className="btn-icon edit"
+                                                    onClick={() => handleEdit(product)}
+                                                    title="Update stock"
+                                                >
+                                                    <Edit2 size={16} />
+                                                </button>
                                             </td>
                                         </tr>
                                     ))

@@ -16,7 +16,7 @@ const UserManagement = () => {
     const [selectedRole, setSelectedRole] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [activeTab, setActiveTab] = useState('roles');
-    const [roleFilter, setRoleFilter] = useState('all');
+    const [roleFilter, setRoleFilter] = useState('client');
 
     const user = JSON.parse(localStorage.getItem('user'));
     const adminUserId = user?.user_id;
@@ -256,10 +256,12 @@ const UserManagement = () => {
     };
 
     const filteredUsers = users.filter((u) => {
+        if (u.user_id === adminUserId) return false;
         const normalized = normalizeRoleName(u.role_name);
-        if (roleFilter === 'all') return true;
         return normalized === roleFilter;
     });
+
+    const isClientRoleView = roleFilter === 'client';
 
     if (loading) {
         return <div className="loading">Loading users...</div>;
@@ -303,12 +305,29 @@ const UserManagement = () => {
                                 onChange={(e) => setSearch(e.target.value)}
                             />
                         </div>
-                        <select className="role-filter-select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                            <option value="all">All Roles</option>
-                            <option value="client">Client</option>
-                            <option value="worker">Worker</option>
-                            <option value="admin">Admin</option>
-                        </select>
+                        <div className="role-filter-tabs" role="tablist" aria-label="Filter users by role">
+                            <button
+                                type="button"
+                                className={`role-filter-tab ${roleFilter === 'client' ? 'active' : ''}`}
+                                onClick={() => setRoleFilter('client')}
+                            >
+                                Client
+                            </button>
+                            <button
+                                type="button"
+                                className={`role-filter-tab ${roleFilter === 'worker' ? 'active' : ''}`}
+                                onClick={() => setRoleFilter('worker')}
+                            >
+                                Worker
+                            </button>
+                            <button
+                                type="button"
+                                className={`role-filter-tab ${roleFilter === 'admin' ? 'active' : ''}`}
+                                onClick={() => setRoleFilter('admin')}
+                            >
+                                Admin
+                            </button>
+                        </div>
                     </div>
 
                     {loading ? (
@@ -318,15 +337,15 @@ const UserManagement = () => {
                             <p>No users found</p>
                         </div>
                     ) : (
-                        <div className="users-table">
+                        <div className={`users-table ${isClientRoleView ? 'client-role-view' : 'non-client-role-view'}`}>
                             <div className="table-header">
                                 <div className="col-name">Name</div>
                                 <div className="col-email">Email</div>
                                 <div className="col-contact">Contact</div>
                                 <div className="col-role">Current Role</div>
                                 <div className="col-verified">Verified</div>
-                                <div className="col-senior">Senior Citizen</div>
-                                <div className="col-pwd">PWD</div>
+                                {isClientRoleView && <div className="col-senior">Senior Citizen</div>}
+                                {isClientRoleView && <div className="col-pwd">PWD</div>}
                                 <div className="col-joined">Joined</div>
                                 <div className="col-actions">Actions</div>
                             </div>
@@ -353,58 +372,62 @@ const UserManagement = () => {
                                             <XCircle size={20} className="unverified" title="Not Verified" />
                                         )}
                                     </div>
-                                    <div className="col-senior">
-                                        {user.is_senior !== 1 ? (
-                                            <span>N/A</span>
-                                        ) : user.senior_verified === 1 ? (
-                                            <CheckCircle size={20} className="verified" title="Senior Citizen Verified" />
-                                        ) : user.senior_verified === 0 ? (
-                                            <div className="verification-actions">
-                                                <button
-                                                    className="btn-approve"
-                                                    onClick={() => handleVerifySenior(user.user_id, true)}
-                                                    title="Approve Senior Citizen"
-                                                >
-                                                    ✓
-                                                </button>
-                                                <button
-                                                    className="btn-reject"
-                                                    onClick={() => handleVerifySenior(user.user_id, false)}
-                                                    title="Reject Senior Citizen"
-                                                >
-                                                    ✗
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <span className="pending">Pending</span>
-                                        )}
-                                    </div>
-                                    <div className="col-pwd">
-                                        {user.is_pwd !== 1 ? (
-                                            <span>N/A</span>
-                                        ) : user.pwd_verified === 1 ? (
-                                            <CheckCircle size={20} className="verified" title="PWD Verified" />
-                                        ) : user.pwd_verified === 0 ? (
-                                            <div className="verification-actions">
-                                                <button
-                                                    className="btn-approve"
-                                                    onClick={() => handleVerifyPwd(user.user_id, true)}
-                                                    title="Approve PWD"
-                                                >
-                                                    ✓
-                                                </button>
-                                                <button
-                                                    className="btn-reject"
-                                                    onClick={() => handleVerifyPwd(user.user_id, false)}
-                                                    title="Reject PWD"
-                                                >
-                                                    ✗
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <span className="pending">Pending</span>
-                                        )}
-                                    </div>
+                                    {isClientRoleView && (
+                                        <div className="col-senior">
+                                            {user.is_senior !== 1 ? (
+                                                <span>N/A</span>
+                                            ) : user.senior_verified === 1 ? (
+                                                <CheckCircle size={20} className="verified" title="Senior Citizen Verified" />
+                                            ) : user.senior_verified === 0 ? (
+                                                <div className="verification-actions">
+                                                    <button
+                                                        className="btn-approve"
+                                                        onClick={() => handleVerifySenior(user.user_id, true)}
+                                                        title="Approve Senior Citizen"
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                    <button
+                                                        className="btn-reject"
+                                                        onClick={() => handleVerifySenior(user.user_id, false)}
+                                                        title="Reject Senior Citizen"
+                                                    >
+                                                        ✗
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <span className="pending">Pending</span>
+                                            )}
+                                        </div>
+                                    )}
+                                    {isClientRoleView && (
+                                        <div className="col-pwd">
+                                            {user.is_pwd !== 1 ? (
+                                                <span>N/A</span>
+                                            ) : user.pwd_verified === 1 ? (
+                                                <CheckCircle size={20} className="verified" title="PWD Verified" />
+                                            ) : user.pwd_verified === 0 ? (
+                                                <div className="verification-actions">
+                                                    <button
+                                                        className="btn-approve"
+                                                        onClick={() => handleVerifyPwd(user.user_id, true)}
+                                                        title="Approve PWD"
+                                                    >
+                                                        ✓
+                                                    </button>
+                                                    <button
+                                                        className="btn-reject"
+                                                        onClick={() => handleVerifyPwd(user.user_id, false)}
+                                                        title="Reject PWD"
+                                                    >
+                                                        ✗
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <span className="pending">Pending</span>
+                                            )}
+                                        </div>
+                                    )}
                                     <div className="col-joined">
                                         {new Date(user.created_at).toLocaleDateString()}
                                     </div>

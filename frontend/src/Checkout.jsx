@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { CreditCard, MapPin, ArrowLeft } from 'lucide-react';
+import { MapPin, ArrowLeft } from 'lucide-react';
 import './Checkout.css';
 
 const Checkout = () => {
@@ -18,12 +18,7 @@ const Checkout = () => {
         phone: user?.contact_number || '',
         address: user?.address || '',
         city: '',
-        postalCode: '',
-        cardholderName: '',
-        cardNumber: '',
-        expiryMonth: '',
-        expiryYear: '',
-        cvv: ''
+        postalCode: ''
     });
     const [loading, setLoading] = useState(false);
 
@@ -68,27 +63,6 @@ const Checkout = () => {
             return false;
         }
 
-        // Validate card details
-        if (!formData.cardNumber || formData.cardNumber.length < 13) {
-            Swal.fire({
-                title: 'Error',
-                text: 'Please enter a valid card number',
-                icon: 'error',
-                confirmButtonColor: '#2563eb'
-            });
-            return false;
-        }
-
-        if (!formData.cvv || formData.cvv.length < 3) {
-            Swal.fire({
-                title: 'Error',
-                text: 'Please enter a valid CVV',
-                icon: 'error',
-                confirmButtonColor: '#2563eb'
-            });
-            return false;
-        }
-
         return true;
     };
 
@@ -104,13 +78,14 @@ const Checkout = () => {
                 userId: user.user_id,
                 items: cartItems,
                 totalAmount: total,
-                shippingAddress: `${formData.address}, ${formData.city} ${formData.postalCode}`
+                shippingAddress: `${formData.address}, ${formData.city} ${formData.postalCode}`,
+                paymentMethod: 'cash_on_store'
             });
 
             if (response.data.orderId) {
                 Swal.fire({
                     title: 'Order Successful!',
-                    text: `Order #${response.data.orderId} has been placed`,
+                    text: `Order #${response.data.orderId} has been placed. Please proceed to the store to pay and claim your products.`,
                     icon: 'success',
                     confirmButtonColor: '#2563eb'
                 }).then(() => {
@@ -227,74 +202,12 @@ const Checkout = () => {
                         </div>
                     </section>
 
-                    {/* Payment Information */}
+                    {/* Payment Method Notice */}
                     <section className="form-section">
-                        <h2><CreditCard size={20} /> Payment Information</h2>
-                        
-                        <div className="form-group full">
-                            <label>Cardholder Name *</label>
-                            <input 
-                                type="text"
-                                name="cardholderName"
-                                value={formData.cardholderName}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </div>
-
-                        <div className="form-group full">
-                            <label>Card Number *</label>
-                            <input 
-                                type="text"
-                                name="cardNumber"
-                                placeholder="1234 5678 9012 3456"
-                                value={formData.cardNumber}
-                                onChange={(e) => {
-                                    let value = e.target.value.replace(/\s/g, '');
-                                    value = value.replace(/(\d{4})/g, '$1 ').trim();
-                                    setFormData(prev => ({ ...prev, cardNumber: value }));
-                                }}
-                                required
-                            />
-                        </div>
-
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>Expiry Date *</label>
-                                <div className="expiry-inputs">
-                                    <input 
-                                        type="text"
-                                        name="expiryMonth"
-                                        placeholder="MM"
-                                        maxLength="2"
-                                        value={formData.expiryMonth}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                    <span>/</span>
-                                    <input 
-                                        type="text"
-                                        name="expiryYear"
-                                        placeholder="YY"
-                                        maxLength="2"
-                                        value={formData.expiryYear}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
-                                </div>
-                            </div>
-                            <div className="form-group">
-                                <label>CVV *</label>
-                                <input 
-                                    type="text"
-                                    name="cvv"
-                                    placeholder="123"
-                                    maxLength="4"
-                                    value={formData.cvv}
-                                    onChange={handleInputChange}
-                                    required
-                                />
-                            </div>
+                        <h2>Payment Method</h2>
+                        <div className="payment-notice">
+                            <p><strong>Store Payment Only:</strong> Payment is completed at the physical store.</p>
+                            <p>Please proceed to the store to pay and claim your products after placing your order.</p>
                         </div>
                     </section>
 

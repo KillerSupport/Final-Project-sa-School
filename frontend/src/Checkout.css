@@ -107,24 +107,21 @@
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.expiry-inputs {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+.payment-notice {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-left: 4px solid #0284c7;
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #0f172a;
 }
 
-.expiry-inputs input {
-    flex: 1;
-    padding: 12px 15px;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    text-align: center;
-    font-weight: 600;
+.payment-notice p {
+    margin: 0 0 8px 0;
 }
 
-.expiry-inputs span {
-    color: #999;
-    font-weight: 600;
+.payment-notice p:last-child {
+    margin-bottom: 0;
 }
 
 .btn-place-order {

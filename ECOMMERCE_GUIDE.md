@@ -12,7 +12,7 @@ This is a complete MERN stack ecommerce application for selling pet fish. The ap
 - ✅ **Product Catalog**: Browse all fish with search and filter
 - ✅ **Product Details**: View detailed information about each fish
 - ✅ **Shopping Cart**: Add/remove items, adjust quantities
-- ✅ **Checkout**: Secure payment form with shipping details
+- ✅ **Checkout**: Shipping details with store-payment instructions
 - ✅ **Order History**: View past orders and track status
 - ✅ **Responsive Design**: Works on mobile, tablet, and desktop
 
@@ -160,7 +160,7 @@ Browse Catalog → Search/Filter → View Product Details → Add to Cart
 ### 3. **Checkout**
 ```
 View Cart → Adjust Quantities → Proceed to Checkout → 
-Enter Shipping & Payment → Place Order → Confirmation
+Enter Shipping Details → Place Order → Proceed to Store Payment
 ```
 
 ### 4. **Order Management**
@@ -193,7 +193,7 @@ Admin Dashboard → Manage Products (CRUD) → Track Orders
 
 ### Checkout
 - **Shipping Information**: Complete address fields
-- **Payment Form**: Card details with validation
+- **Payment Method**: Store payment only
 - **Order Summary**: Review all items before purchase
 - **Security**: Form validation and error handling
 
@@ -277,7 +277,7 @@ Order placement page.
 
 **Features:**
 - Shipping information form
-- Payment card form
+- Store-payment-only notice
 - Order summary
 - Real-time total calculation
 
@@ -351,7 +351,7 @@ const user = JSON.parse(localStorage.getItem('user'))
 5. Add item to cart
 6. View cart and adjust quantities
 7. Proceed to checkout
-8. Fill shipping and payment info
+8. Fill shipping details
 9. Place order
 10. Check order history
 
@@ -390,7 +390,7 @@ const user = JSON.parse(localStorage.getItem('user'))
 
 To further enhance the application:
 
-1. **Payment Gateway**: Integrate Stripe or PayPal
+1. **Order Enhancements**: Improve order confirmation and claim flow
 2. **Email Notifications**: Send order confirmations
 3. **User Reviews**: Add ratings and reviews
 4. **Wishlist**: Save favorite products

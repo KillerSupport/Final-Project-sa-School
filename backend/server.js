@@ -294,7 +294,7 @@ app.post('/api/reset-password', (req, res) => {
 // --- 10. GET ALL PRODUCTS (including deleted/out of stock) ---
 app.get('/api/products', (req, res) => {
     const { search, category, priceMin, priceMax } = req.query;
-    let sql = "SELECT * FROM products";
+    let sql = "SELECT * FROM products WHERE is_deleted = 0";
     const params = [];
 
     if (search) {
@@ -316,6 +316,8 @@ app.get('/api/products', (req, res) => {
         sql += " AND price <= ?";
         params.push(parseInt(priceMax));
     }
+
+    sql += " ORDER BY created_at DESC";
 
     db.query(sql, params, (err, results) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -367,22 +369,144 @@ app.post('/api/upload-id', upload.single('idImage'), (req, res) => {
 
 // --- 12. CREATE PRODUCT (Admin and Worker) ---
 app.post('/api/products', checkRole('admin'), (req, res) => {
-    const { name, description, petCareContent, category, price, stock, lowStockThreshold, imageUrl, compatibility, careDifficulty, lifespan, diet } = req.body;
-    const sql = "INSERT INTO products (name, description, pet_care_content, category, price, stock, low_stock_threshold, image_url, compatibility, care_difficulty, lifespan, diet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    const { name, description, category, price, stock, lowStockThreshold, imageUrl } = req.body;
+    const normalizedImageUrl = imageUrl || null;
 
-    db.query(sql, [name, description, petCareContent, category, price, stock, lowStockThreshold || 5, imageUrl, compatibility, careDifficulty || 'beginner', lifespan, diet], (err, result) => {
+        const findExistingSql = `
+                SELECT product_id, stock, is_deleted
+                FROM products
+                WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+                    AND LOWER(TRIM(category)) = LOWER(TRIM(?))
+                    AND price = ?
+                ORDER BY is_deleted ASC, product_id ASC
+                LIMIT 1
+        `;
+
+    db.query(findExistingSql, [name, category, price], (findErr, existingRows) => {
+        if (findErr) return res.status(500).json({ message: "Database error" });
+
+        if (existingRows.length > 0) {
+            const existing = existingRows[0];
+            const updateExistingSql = `
+                UPDATE products
+                SET stock = ?,
+                    description = ?,
+                    low_stock_threshold = ?,
+                    image_url = ?,
+                    is_deleted = 0,
+                    updated_at = NOW()
+                WHERE product_id = ?
+            `;
+
+            const incomingStock = parseInt(stock, 10) || 0;
+            const nextStock = existing.is_deleted ? incomingStock : (Number(existing.stock || 0) + incomingStock);
+
+            db.query(
+                updateExistingSql,
+                [
+                    nextStock,
+                    description || '',
+                    parseInt(lowStockThreshold, 10) || 5,
+                    normalizedImageUrl,
+                    existing.product_id
+                ],
+                (updateErr) => {
+                    if (updateErr) return res.status(500).json({ message: "Database error" });
+                    res.json({
+                        message: existing.is_deleted
+                            ? "Existing deleted product found. It was restored instead of creating a duplicate."
+                            : "Product already exists. Stock was merged into the existing item.",
+                        productId: existing.product_id,
+                        merged: true
+                    });
+                }
+            );
+            return;
+        }
+
+        const insertSql = "INSERT INTO products (name, description, category, price, stock, low_stock_threshold, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+        db.query(
+            insertSql,
+            [
+                name,
+                description || '',
+                category,
+                price,
+                parseInt(stock, 10) || 0,
+                parseInt(lowStockThreshold, 10) || 5,
+                normalizedImageUrl
+            ],
+            (insertErr, result) => {
+                if (insertErr) return res.status(500).json({ message: "Database error" });
+                res.json({ message: "Product created", productId: result.insertId, merged: false });
+            }
+        );
     });
 });
 
 // --- 13. UPDATE PRODUCT (Admin and Worker) ---
 app.put('/api/products/:id', checkRole('admin'), (req, res) => {
     const { id } = req.params;
-    const { name, description, petCareContent, category, price, stock, lowStockThreshold, imageUrl, compatibility, careDifficulty, lifespan, diet } = req.body;
-    const sql = "UPDATE products SET name = ?, description = ?, pet_care_content = ?, category = ?, price = ?, stock = ?, low_stock_threshold = ?, image_url = ?, compatibility = ?, care_difficulty = ?, lifespan = ?, diet = ? WHERE product_id = ?";
+    const { name, description, category, price, stock, lowStockThreshold, imageUrl } = req.body;
+    const checkDuplicateSql = `
+        SELECT product_id, stock
+        FROM products
+        WHERE is_deleted = 0
+          AND product_id <> ?
+          AND LOWER(TRIM(name)) = LOWER(TRIM(?))
+          AND LOWER(TRIM(category)) = LOWER(TRIM(?))
+          AND price = ?
+        LIMIT 1
+    `;
 
-    db.query(sql, [name, description, petCareContent, category, price, stock, lowStockThreshold || 5, imageUrl, compatibility, careDifficulty || 'beginner', lifespan, diet, id], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "Product updated" });
+    db.query(checkDuplicateSql, [id, name, category, price], (checkErr, duplicateRows) => {
+        if (checkErr) return res.status(500).json({ message: "Database error" });
+
+        if (duplicateRows.length > 0) {
+            const duplicate = duplicateRows[0];
+            const mergedStock = (Number(duplicate.stock || 0) + (parseInt(stock, 10) || 0));
+
+            const mergeSql = `
+                UPDATE products
+                SET stock = ?,
+                    description = ?,
+                    low_stock_threshold = ?,
+                    image_url = ?,
+                    updated_at = NOW()
+                WHERE product_id = ?
+            `;
+
+            db.query(
+                mergeSql,
+                [
+                    mergedStock,
+                    description || '',
+                    parseInt(lowStockThreshold, 10) || 5,
+                    imageUrl || null,
+                    duplicate.product_id
+                ],
+                (mergeErr) => {
+                    if (mergeErr) return res.status(500).json({ message: "Database error" });
+
+                    db.query("UPDATE products SET is_deleted = 1 WHERE product_id = ?", [id], (softDeleteErr) => {
+                        if (softDeleteErr) return res.status(500).json({ message: "Database error" });
+                        res.json({
+                            message: "Matching product already existed. Changes were merged into one product entry.",
+                            merged: true,
+                            productId: duplicate.product_id
+                        });
+                    });
+                }
+            );
+            return;
+        }
+
+        const updateSql = "UPDATE products SET name = ?, description = ?, category = ?, price = ?, stock = ?, low_stock_threshold = ?, image_url = ? WHERE product_id = ?";
+        db.query(updateSql, [name, description, category, price, stock, lowStockThreshold || 5, imageUrl || null, id], (err) => {
+            if (err) return res.status(500).json({ message: "Database error" });
+            res.json({ message: "Product updated", merged: false });
+        });
     });
 });
 
@@ -394,6 +518,90 @@ app.delete('/api/products/:id', checkRole('admin'), (req, res) => {
     db.query(sql, [id], (err) => {
         if (err) return res.status(500).json({ message: "Database error" });
         res.json({ message: "Product deleted" });
+    });
+});
+
+// --- 14.1. GET DELETED PRODUCTS (Admin Only) ---
+app.get('/api/admin/deleted-products', checkRole('admin'), (req, res) => {
+    const sql = `
+        SELECT *
+        FROM products
+        WHERE is_deleted = 1
+        ORDER BY updated_at DESC, product_id DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        res.json(results);
+    });
+});
+
+// --- 14.2. RESTORE DELETED PRODUCT (Admin Only) ---
+app.put('/api/products/:id/restore', checkRole('admin'), (req, res) => {
+    const { id } = req.params;
+    const {
+        name,
+        description,
+        category,
+        price,
+        stock,
+        lowStockThreshold,
+        imageUrl
+    } = req.body;
+
+    db.query("SELECT * FROM products WHERE product_id = ?", [id], (err, productResult) => {
+        if (err) return res.status(500).json({ message: "Database error" });
+        if (productResult.length === 0) return res.status(404).json({ message: "Product not found" });
+
+        const deletedProduct = productResult[0];
+        if (deletedProduct.is_deleted !== 1) {
+            return res.status(400).json({ message: "Product is already active" });
+        }
+
+        const nextName = name || deletedProduct.name;
+        const nextDescription = description || deletedProduct.description || '';
+        const nextCategory = category || deletedProduct.category || '';
+        const nextPrice = price !== undefined ? price : deletedProduct.price;
+        const nextStock = parseInt(stock, 10) >= 0 ? parseInt(stock, 10) : Number(deletedProduct.stock || 0);
+        const nextThreshold = parseInt(lowStockThreshold, 10) || deletedProduct.low_stock_threshold || 5;
+        const nextImageUrl = imageUrl || deletedProduct.image_url || null;
+
+        db.query(
+            `SELECT product_id, stock FROM products
+             WHERE is_deleted = 0
+               AND LOWER(TRIM(name)) = LOWER(TRIM(?))
+               AND LOWER(TRIM(category)) = LOWER(TRIM(?))
+               AND price = ?
+             LIMIT 1`,
+            [nextName, nextCategory, nextPrice],
+            (dupErr, dupRows) => {
+                if (dupErr) return res.status(500).json({ message: "Database error" });
+
+                if (dupRows.length > 0) {
+                    const activeProduct = dupRows[0];
+                    const mergedStock = Number(activeProduct.stock || 0) + Number(nextStock || 0);
+
+                    db.query(
+                        "UPDATE products SET description = ?, low_stock_threshold = ?, image_url = ?, stock = ?, updated_at = NOW() WHERE product_id = ?",
+                        [nextDescription, nextThreshold, nextImageUrl, mergedStock, activeProduct.product_id],
+                        (mergeErr) => {
+                            if (mergeErr) return res.status(500).json({ message: "Database error" });
+                            res.json({ message: "Deleted product merged into existing active product", restored: false, merged: true });
+                        }
+                    );
+                    return;
+                }
+
+                db.query(
+                    "UPDATE products SET name = ?, description = ?, category = ?, price = ?, stock = ?, low_stock_threshold = ?, image_url = ?, is_deleted = 0, updated_at = NOW() WHERE product_id = ?",
+                    [nextName, nextDescription, nextCategory, nextPrice, nextStock, nextThreshold, nextImageUrl, id],
+                    (restoreErr) => {
+                        if (restoreErr) return res.status(500).json({ message: "Database error" });
+                        res.json({ message: "Product restored successfully", restored: true, merged: false });
+                    }
+                );
+            }
+        );
     });
 });
 
@@ -547,7 +755,8 @@ app.delete('/api/cart/:cartId', (req, res) => {
 
 // --- 19. CREATE ORDER WITH RECEIPT EMAIL ---
 app.post('/api/orders', (req, res) => {
-    const { userId, items, totalAmount, shippingAddress, paymentMethod = 'cash_on_store' } = req.body;
+    const { userId, items, totalAmount, shippingAddress } = req.body;
+    const paymentMethod = 'cash_on_store';
 
     // Get user discount status
     db.query("SELECT is_senior, is_pwd, senior_verified, pwd_verified FROM user_accounts WHERE user_id = ?", [userId], (userErr, userResult) => {
@@ -739,6 +948,104 @@ function generateReceiptHtml(order, items, userName) {
             <div class="footer">
                 <p>Thank you for shopping with TongTong Ornamental Fish Store!</p>
                 <p>If you have any questions, please contact us at tongtongornamental@gmail.com</p>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+// Function to generate cancellation confirmation email
+function generateCancellationInvoice(userData, orderItems, cancellationRequest) {
+    const formattedDate = new Date(userData.created_at).toLocaleDateString();
+    const approvalDate = new Date().toLocaleDateString();
+    
+    const itemsHtml = orderItems.map(item => `
+        <tr>
+            <td>${item.name}</td>
+            <td>${item.quantity}</td>
+            <td>₱${item.price.toFixed(2)}</td>
+            <td>₱${(item.quantity * item.price).toFixed(2)}</td>
+        </tr>
+    `).join('');
+
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 5px 5px 0 0; }
+                .header h1 { margin: 0; }
+                .content { background: #f9f9f9; padding: 20px; }
+                .section { margin: 20px 0; }
+                .status-box { background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px 0; border-radius: 4px; }
+                .status-box.approved { background: #d4edda; border-left-color: #28a745; }
+                table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+                table th { background: #667eea; color: white; padding: 10px; text-align: left; }
+                table td { padding: 10px; border-bottom: 1px solid #ddd; }
+                .total { font-weight: bold; font-size: 18px; color: #764ba2; }
+                .footer { color: #666; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>✓ Order Cancellation Confirmed</h1>
+                    <p>Your order has been successfully cancelled</p>
+                </div>
+                
+                <div class="content">
+                    <p>Dear ${userData.first_name} ${userData.last_name},</p>
+                    
+                    <p>This is to confirm that your order cancellation request has been <strong>APPROVED</strong>.</p>
+                    
+                    <div class="status-box approved">
+                        <h3 style="margin-top: 0; color: #28a745;">✓ Cancellation Status: APPROVED</h3>
+                        <p><strong>Order ID:</strong> #${userData.order_id}</p>
+                        <p><strong>Original Order Date:</strong> ${formattedDate}</p>
+                        <p><strong>Cancellation Approved Date:</strong> ${approvalDate}</p>
+                        <p><strong>Cancellation Reason:</strong> ${cancellationRequest.reason || 'Not specified'}</p>
+                    </div>
+                    
+                    <div class="section">
+                        <h3>Cancelled Items:</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Quantity</th>
+                                    <th>Unit Price</th>
+                                    <th>Subtotal</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${itemsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="section">
+                        <p><strong>Refund Amount:</strong> <span class="total">₱${userData.total_amount.toFixed(2)}</span></p>
+                        <p style="color: #666;">Your refund will be processed within 5-7 business days to your original payment method.</p>
+                    </div>
+                    
+                    <div class="section" style="background: #e3f2fd; padding: 15px; border-radius: 4px; border-left: 4px solid #2196F3;">
+                        <h4 style="margin-top: 0; color: #1976D2;">Important Information:</h4>
+                        <ul style="margin: 10px 0;">
+                            <li>Your order is now marked as CANCELLED</li>
+                            <li>All ordered items have been restocked</li>
+                            <li>You can place a new order anytime</li>
+                            <li>If you need further assistance, please contact us immediately</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="footer">
+                    <p>Thank you for understanding. We appreciate your business!</p>
+                    <p>For questions or concerns about this cancellation, please contact us at <strong>tongtongornamental@gmail.com</strong></p>
+                    <p style="margin-top: 20px; color: #999;">TongTong Ornamental Fish Store | All Rights Reserved</p>
+                </div>
             </div>
         </body>
         </html>
@@ -960,7 +1267,7 @@ app.put('/api/admin/cancellation-requests/:requestId', checkRole(['admin', 'work
                     (err) => {
                         if (err) return res.status(500).json({ message: "Database error" });
                         
-                        // If approved, restore stock
+                        // If approved, restore stock and send cancellation email
                         if (action === 'approve') {
                             db.query(
                                 "SELECT product_id, quantity FROM order_items WHERE order_id = ?",
@@ -976,7 +1283,50 @@ app.put('/api/admin/cancellation-requests/:requestId', checkRole(['admin', 'work
                                         );
                                     });
                                     
-                                    res.json({ message: `Cancellation ${action}d successfully` });
+                                    // Get user email and order details for email
+                                    db.query(
+                                        "SELECT u.email, u.first_name, u.last_name, o.order_id, o.total_amount, o.created_at FROM user_accounts u JOIN orders o ON u.user_id = o.user_id WHERE o.order_id = ?",
+                                        [request.order_id],
+                                        (err, userOrderData) => {
+                                            if (err) {
+                                                console.error('Error fetching user email:', err);
+                                            } else if (userOrderData.length > 0) {
+                                                const userData = userOrderData[0];
+                                                
+                                                // Get all items in order
+                                                db.query(
+                                                    "SELECT p.name, oi.quantity, oi.price FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ?",
+                                                    [request.order_id],
+                                                    (err, orderItems) => {
+                                                        if (!err) {
+                                                            // Generate cancellation confirmation email
+                                                            const cancellationHtml = generateCancellationInvoice(userData, orderItems, request);
+                                                            
+                                                            const mailOptions = {
+                                                                from: 'tongtongornamental@gmail.com',
+                                                                to: userData.email,
+                                                                subject: `Order Cancellation Confirmed - Order #${request.order_id}`,
+                                                                html: cancellationHtml
+                                                            };
+                                                            
+                                                            transporter.sendMail(mailOptions, (emailError) => {
+                                                                if (emailError) {
+                                                                    console.error("Cancellation email error:", emailError);
+                                                                } else {
+                                                                    console.log("Cancellation confirmation email sent to:", userData.email);
+                                                                }
+                                                                res.json({ message: "Cancellation approved successfully. Confirmation email sent to client." });
+                                                            });
+                                                        } else {
+                                                            res.json({ message: "Cancellation approved successfully" });
+                                                        }
+                                                    }
+                                                );
+                                            } else {
+                                                res.json({ message: "Cancellation approved successfully" });
+                                            }
+                                        }
+                                    );
                                 }
                             );
                         } else {
@@ -1023,31 +1373,37 @@ app.get('/api/products/search', (req, res) => {
         inStock = false 
     } = req.query;
 
-    let sql = `SELECT * FROM products WHERE is_deleted = 0`;
+    const whereClauses = [];
     const params = [];
 
+    if (inStock === 'true') {
+        whereClauses.push('stock > 0');
+        whereClauses.push('is_deleted = 0');
+    }
+
     if (search) {
-        sql += " AND (name LIKE ? OR description LIKE ?)";
+        whereClauses.push('(name LIKE ? OR description LIKE ?)');
         params.push(`%${search}%`, `%${search}%`);
     }
 
     if (category) {
-        sql += " AND category = ?";
+        whereClauses.push('category = ?');
         params.push(category);
     }
 
     if (minPrice) {
-        sql += " AND price >= ?";
+        whereClauses.push('price >= ?');
         params.push(minPrice);
     }
 
     if (maxPrice) {
-        sql += " AND price <= ?";
+        whereClauses.push('price <= ?');
         params.push(maxPrice);
     }
 
-    if (inStock === 'true') {
-        sql += " AND stock > 0";
+    let sql = 'SELECT * FROM products';
+    if (whereClauses.length > 0) {
+        sql += ` WHERE ${whereClauses.join(' AND ')}`;
     }
 
     // Sorting

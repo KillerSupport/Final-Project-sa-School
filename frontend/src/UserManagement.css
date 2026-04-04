@@ -80,13 +80,36 @@
     margin: 0;
 }
 
-.role-filter-select {
-    border: 2px solid #e5e7eb;
+.role-filter-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.role-filter-tab {
+    border: none;
+    background: transparent;
+    color: #4b5563;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 12px;
     border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 14px;
-    color: #333;
-    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.role-filter-tab:hover {
+    background: #eef2ff;
+    color: #1d4ed8;
+}
+
+.role-filter-tab.active {
+    background: #2563eb;
+    color: white;
 }
 
 .search-box {
@@ -156,6 +179,22 @@
     padding: 15px 20px;
     border-bottom: 1px solid #e5e7eb;
     align-items: center;
+}
+
+.users-table.client-role-view:not(.verification-table) .table-header {
+    grid-template-columns: 1.5fr 1.8fr 1.2fr 1fr 0.8fr 1.2fr 1.2fr 1fr 0.8fr;
+}
+
+.users-table.client-role-view:not(.verification-table) .table-row {
+    grid-template-columns: 1.5fr 1.8fr 1.2fr 1fr 0.8fr 1.2fr 1.2fr 1fr 0.8fr;
+}
+
+.users-table.non-client-role-view:not(.verification-table) .table-header {
+    grid-template-columns: 1.7fr 2fr 1.2fr 1fr 0.9fr 1fr 0.9fr;
+}
+
+.users-table.non-client-role-view:not(.verification-table) .table-row {
+    grid-template-columns: 1.7fr 2fr 1.2fr 1fr 0.9fr 1fr 0.9fr;
 }
 
 /* Verification Requests Table */

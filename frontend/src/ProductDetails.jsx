@@ -81,6 +81,11 @@ const ProductDetails = () => {
         return <div className="loading-container">Product not found</div>;
     }
 
+    const isDiscontinued = Boolean(product.is_deleted);
+    const isOutOfStock = !isDiscontinued && Number(product.stock || 0) <= 0;
+    const isUnavailable = isDiscontinued || isOutOfStock;
+    const availabilityLabel = isDiscontinued ? 'Discontinued' : isOutOfStock ? 'Out of stock' : `${product.stock} in stock`;
+
     return (
         <div className="product-details-container">
             <button 
@@ -96,10 +101,12 @@ const ProductDetails = () => {
                     <img 
                         src={product.image_url || 'https://via.placeholder.com/500'} 
                         alt={product.name}
-                        className="product-main-image"
+                        className={`product-main-image ${isUnavailable ? 'is-unavailable' : ''}`}
                     />
-                    {product.stock === 0 && (
-                        <div className="out-of-stock-overlay">OUT OF STOCK</div>
+                    {isUnavailable && (
+                        <div className={`out-of-stock-overlay ${isDiscontinued ? 'discontinued' : ''}`}>
+                            {availabilityLabel.toUpperCase()}
+                        </div>
                     )}
                 </div>
 
@@ -115,10 +122,10 @@ const ProductDetails = () => {
                     <div className="price-section">
                         <span className="price">₱{product.price}</span>
                         <span className="stock-info">
-                            {product.stock > 0 ? (
+                            {!isUnavailable ? (
                                 <span className="in-stock">✓ {product.stock} in stock</span>
                             ) : (
-                                <span className="out-of-stock">Out of stock</span>
+                                <span className={isDiscontinued ? 'discontinued' : 'out-of-stock'}>{availabilityLabel}</span>
                             )}
                         </span>
                     </div>
@@ -128,7 +135,7 @@ const ProductDetails = () => {
                         <p>{product.description}</p>
                     </div>
 
-                    {product.pet_care_content && (
+                    {product.pet_care_content && !isDiscontinued && (
                         <div className="pet-care-section">
                             <h3>🐠 Pet Care Guide</h3>
                             <div className="pet-care-content">
@@ -144,7 +151,7 @@ const ProductDetails = () => {
                         <ul>
                             <li><strong>Type:</strong> Pet Fish</li>
                             <li><strong>Category:</strong> {product.category}</li>
-                            <li><strong>Availability:</strong> {product.stock > 0 ? 'In Stock' : 'Out of Stock'}</li>
+                            <li><strong>Availability:</strong> {availabilityLabel}</li>
                         </ul>
                     </div>
 
@@ -163,11 +170,12 @@ const ProductDetails = () => {
                                     value={quantity}
                                     onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                                     min="1"
-                                    max={product.stock}
+                                    max={isUnavailable ? 1 : product.stock}
+                                    disabled={isUnavailable}
                                 />
                                 <button 
                                     onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                                    disabled={quantity >= product.stock}
+                                    disabled={isUnavailable || quantity >= product.stock}
                                 >
                                     <Plus size={18} />
                                 </button>
@@ -177,7 +185,7 @@ const ProductDetails = () => {
                         <button 
                             className="add-to-cart-btn"
                             onClick={handleAddToCart}
-                            disabled={product.stock === 0}
+                            disabled={isUnavailable}
                         >
                             <ShoppingCart size={20} />
                             Add to Cart
@@ -194,8 +202,8 @@ const ProductDetails = () => {
                             <span className="value">30-day return policy</span>
                         </div>
                         <div className="info-item">
-                            <span className="label">💳 Secure Payment</span>
-                            <span className="value">Safe checkout process</span>
+                            <span className="label">🏪 Store Payment</span>
+                            <span className="value">Pay and claim your order at the store</span>
                         </div>
                     </div>
                 </div>

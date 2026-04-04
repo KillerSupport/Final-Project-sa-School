@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Mar 27, 2026 at 04:46 PM
+-- Generation Time: Apr 04, 2026 at 04:01 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -155,29 +155,10 @@ CREATE TABLE `products` (
   `stock` int(11) DEFAULT 0,
   `low_stock_threshold` int(11) DEFAULT 5,
   `image_url` varchar(500) DEFAULT NULL,
-  `compatibility` text DEFAULT NULL,
-  `care_difficulty` enum('beginner','intermediate','advanced') DEFAULT 'beginner',
-  `lifespan` varchar(100) DEFAULT NULL,
-  `diet` text DEFAULT NULL,
   `is_deleted` tinyint(1) DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `products`
---
-
-INSERT INTO `products` (`product_id`, `name`, `description`, `pet_care_content`, `category`, `price`, `stock`, `low_stock_threshold`, `image_url`, `compatibility`, `care_difficulty`, `lifespan`, `diet`, `is_deleted`, `created_at`, `updated_at`) VALUES
-(1, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:51', '2026-03-27 15:41:51'),
-(2, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:54', '2026-03-27 15:41:54'),
-(3, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:56', '2026-03-27 15:41:56'),
-(4, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:57', '2026-03-27 15:41:57'),
-(5, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:57', '2026-03-27 15:41:57'),
-(6, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:58', '2026-03-27 15:41:58'),
-(7, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:59', '2026-03-27 15:41:59'),
-(8, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:59', '2026-03-27 15:41:59'),
-(9, 'Clown Fish', 'Nemo', '', 'Saltwater', 105.00, 26, 5, 'http://localhost:5000/uploads/1774626108477-299550616.jpg', 'Mabait', 'beginner', '3 years', 'kain lang', 0, '2026-03-27 15:41:59', '2026-03-27 15:41:59');
 
 -- --------------------------------------------------------
 
@@ -256,10 +237,10 @@ CREATE TABLE `user_accounts` (
 --
 
 INSERT INTO `user_accounts` (`user_id`, `first_name`, `middle_name`, `last_name`, `suffix`, `birthday`, `gender`, `contact_number`, `address`, `email`, `password`, `role_id`, `legacy_role`, `is_verified`, `otp`, `otp_expires_at`, `is_senior`, `is_pwd`, `senior_verified`, `pwd_verified`, `id_image_url`, `created_at`, `is_deleted`) VALUES
-(1, 'Hatsune', '', 'Miku', '', '2007-08-31', 'Female', '09123456789', 'Japan', 'harijie.mabilin@cvsu.edu.ph', 'HatsuneMiku39', 1, 'client', 1, NULL, NULL, 0, 0, 0, 0, NULL, '2026-03-18 12:33:18', 0),
-(2, 'TongTong', '', 'Fish', '', '1111-11-11', 'Fish', '09123456789', 'Imus', 'tongtongornamental@gmail.com', '$2b$10$tV3Fb/mpb6R2QL9cqqQg0OkpOKh8nO.KF04NtQX9yHWuFh5Lmy6CC', 2, 'admin', 1, NULL, NULL, 0, 0, 0, 0, NULL, '2026-03-18 12:34:27', 0),
+(1, 'Hatsune', '', 'Miku', '', '2007-08-31', 'Female', '09123456789', 'Japan', 'harijie.mabilin@cvsu.edu.ph', '$2b$10$5vdmFsuWbTXhvScM2.Ow7u85RySVsFR.IcVPnA4K6XfK4lHbcsFBm', 1, 'client', 1, NULL, NULL, 0, 0, 0, 0, NULL, '2026-03-18 12:33:18', 0),
+(2, 'TongTong', '', 'Fish', '', '1111-11-11', 'Fish', '09123456789', 'Imus', 'tongtongornamental@gmail.com', '$2b$10$HoDGtrCo7BRHTIqO2SfGYeLw8WO.arpG9gA2a8OX.4pPwkOnF8hqy', 2, 'admin', 1, NULL, NULL, 0, 0, 0, 0, 'http://localhost:5000/uploads/1775222547669-981544101.jpg', '2026-03-18 12:34:27', 0),
 (3, 'Harijie', '', 'Mabilin', '', '2004-07-15', 'Male', '09987654321', 'bacoor', 'harijiem@gmail.com', '$2b$10$VMiuUOPIR7NmWRb0gpZAwem2RbakIdmm/ZbxVqi0W8nddmt5ygFY.', 3, 'worker', 1, NULL, NULL, 0, 0, 0, 0, NULL, '2026-03-18 12:35:18', 0),
-(4, 'Megurine', '', 'Luka', '', '2009-01-30', 'Female', '09123456789', 'Japan', 'mharijie@gmail.com', 'testlangE2', 1, 'client', 0, '9045', '2026-03-20 22:53:04', 0, 0, 0, 0, NULL, '2026-03-20 14:35:15', 0);
+(4, 'Megurine', '', 'Luka', '', '0000-00-00', 'Female', '12321423423', 'Japan', 'mharijie@gmail.com', '$2b$10$Evj/gCB2HZZcNb50yEbXIuk0ji68dYbsJJUCHvOiyhxIq2NuFykfm', 1, 'client', 1, NULL, NULL, 0, 0, 0, 0, 'http://localhost:5000/uploads/1775265752811-642736095.jpg', '2026-04-03 04:22:18', 0);
 
 --
 -- Indexes for dumped tables
@@ -345,6 +326,12 @@ ALTER TABLE `roles`
   ADD UNIQUE KEY `role_name` (`role_name`);
 
 --
+-- Indexes for table `user_accounts`
+--
+ALTER TABLE `user_accounts`
+  ADD PRIMARY KEY (`user_id`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -388,7 +375,7 @@ ALTER TABLE `order_items`
 -- AUTO_INCREMENT for table `products`
 --
 ALTER TABLE `products`
-  MODIFY `product_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `product_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `product_reviews`
@@ -401,6 +388,12 @@ ALTER TABLE `product_reviews`
 --
 ALTER TABLE `roles`
   MODIFY `role_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `user_accounts`
+--
+ALTER TABLE `user_accounts`
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- Constraints for dumped tables
@@ -417,7 +410,7 @@ ALTER TABLE `invoices`
 --
 ALTER TABLE `order_items`
   ADD CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
