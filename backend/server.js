@@ -6,7 +6,9 @@ const nodemailer = require('nodemailer');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const PDFDocument = require('pdfkit');
 // --- ROUTES MOVED BELOW APP INITIALIZATION ---
 // JWT authentication middleware
 const jwt = require('jsonwebtoken');
@@ -33,8 +35,76 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const invoiceUploadDir = path.join(uploadDir, 'invoices');
+if (!fs.existsSync(invoiceUploadDir)) {
+    fs.mkdirSync(invoiceUploadDir, { recursive: true });
+}
+
 // Serve uploaded files as static
 app.use('/uploads', express.static(uploadDir));
+
+function buildInvoicePdf(order, customer, items, invoiceNumber, filePath, meta = {}) {
+    return new Promise((resolve, reject) => {
+        const doc = new PDFDocument({ margin: 50, size: 'A4' });
+        const stream = fs.createWriteStream(filePath);
+
+        const issuedBy = (meta.issuedBy || order.issued_by_name || '').trim() || 'Not specified';
+        const paidBy = (meta.paidBy || order.paid_by_name || '').trim() || 'Not yet paid';
+
+        doc.pipe(stream);
+
+        doc.fontSize(20).text('TongTong Ornamental Fish Store', { align: 'center' });
+        doc.moveDown(0.3);
+        doc.fontSize(14).text('Invoice / Store Payment Receipt', { align: 'center' });
+        doc.moveDown(1.2);
+
+        doc.fontSize(11).text(`Invoice Number: ${invoiceNumber}`);
+        doc.text(`Order ID: #${order.order_id}`);
+        doc.text(`Customer: ${customer}`);
+        doc.text(`Email: ${order.email || '-'}`);
+        doc.text(`Contact Number: ${order.contact_number || '-'}`);
+        doc.text(`Order Date: ${new Date(order.created_at).toLocaleString()}`);
+        doc.text(`Status: ${order.status || 'pending'}`);
+        doc.text(`Invoice Prepared By: ${issuedBy}`);
+        doc.text(`Payment Confirmed By: ${paidBy}`);
+        doc.moveDown(1);
+
+        doc.fontSize(12).text('Order Summary', { underline: true });
+        doc.moveDown(0.5);
+
+        let subtotal = 0;
+        let totalDiscount = 0;
+
+        items.forEach((item) => {
+            const qty = Number(item.quantity || 0);
+            const price = Number(item.price || 0);
+            const unitDiscount = Number(item.unit_discount || 0);
+            const total = qty * price;
+            const discountAmount = qty * unitDiscount;
+            subtotal += total;
+            totalDiscount += discountAmount;
+            const rowY = doc.y;
+            doc.fontSize(10).text(`${item.name || 'Item'} x ${qty}`, 50, rowY, { width: 330 });
+            doc.text(`PHP ${(total - discountAmount).toFixed(2)}`, 390, rowY, { width: 150, align: 'right' });
+            doc.moveDown(0.7);
+        });
+
+        doc.moveDown(0.8);
+        const discountedTotal = subtotal - totalDiscount;
+        doc.fontSize(11).text(`Subtotal: PHP ${subtotal.toFixed(2)}`, { align: 'right' });
+        if (totalDiscount > 0) {
+            doc.text(`Verified Discount: -PHP ${totalDiscount.toFixed(2)}`, { align: 'right' });
+        }
+        doc.fontSize(12).text(`Final Total Amount: PHP ${Number(order.total_amount || discountedTotal || 0).toFixed(2)}`, { align: 'right' });
+        doc.moveDown(0.8);
+        doc.fontSize(10).fillColor('#555').text('Present this invoice as receipt proof when paying in store.', { align: 'left' });
+
+        doc.end();
+
+        stream.on('finish', resolve);
+        stream.on('error', reject);
+    });
+}
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -73,6 +143,21 @@ const db = mysql.createConnection({
 db.connect(err => {
     if (err) throw err;
     console.log("Connected to MySQL Database.");
+
+    const schemaUpdates = [
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_by_user_id INT NULL AFTER invoice_pdf_path",
+        "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_by_name VARCHAR(120) NULL AFTER issued_by_user_id",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by_user_id INT NULL AFTER payment_method",
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by_name VARCHAR(120) NULL AFTER paid_by_user_id"
+    ];
+
+    schemaUpdates.forEach((sql) => {
+        db.query(sql, (schemaErr) => {
+            if (schemaErr) {
+                console.error('Schema update warning:', schemaErr.message);
+            }
+        });
+    });
 });
 
 // --- 2. ROLE CHECK MIDDLEWARE ---
@@ -218,9 +303,86 @@ app.post('/api/login', (req, res) => {
             if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
             
             if (user.is_verified === 0) return res.status(403).json({ message: "Unverified" });
-            res.json({ message: "Success", user: user });
+
+            const sessionToken = crypto.randomBytes(24).toString('hex');
+            const ipAddress = req.headers['x-forwarded-for']?.split(',')?.[0]?.trim() || req.socket?.remoteAddress || null;
+            const userAgent = req.headers['user-agent'] || null;
+
+            const logSql = `
+                INSERT INTO user_session_logs (user_id, email, role_name, login_at, login_success, ip_address, user_agent, session_token)
+                VALUES (?, ?, ?, NOW(), 1, ?, ?, ?)
+            `;
+
+            db.query(
+                logSql,
+                [user.user_id, normalizedEmail, user.role_name || null, ipAddress, userAgent, sessionToken],
+                (logErr, logResult) => {
+                    if (logErr) {
+                        console.error('Login log insert error:', logErr);
+                        return res.json({ message: "Success", user: user });
+                    }
+
+                    res.json({
+                        message: "Success",
+                        user: user,
+                        sessionLogId: logResult.insertId,
+                        sessionToken
+                    });
+                }
+            );
         });
     });
+});
+
+// --- 7A. LOGOUT ROUTE WITH SESSION LOG UPDATE ---
+app.post('/api/logout', (req, res) => {
+    const { userId, sessionLogId, sessionToken } = req.body || {};
+
+    if (sessionLogId) {
+        const byIdSql = `
+            UPDATE user_session_logs
+            SET logout_at = NOW()
+            WHERE log_id = ?
+              AND logout_at IS NULL
+        `;
+
+        return db.query(byIdSql, [sessionLogId], (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+            return res.json({ message: 'Logout logged' });
+        });
+    }
+
+    if (sessionToken) {
+        const byTokenSql = `
+            UPDATE user_session_logs
+            SET logout_at = NOW()
+            WHERE session_token = ?
+              AND logout_at IS NULL
+        `;
+
+        return db.query(byTokenSql, [sessionToken], (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+            return res.json({ message: 'Logout logged' });
+        });
+    }
+
+    if (userId) {
+        const byUserSql = `
+            UPDATE user_session_logs
+            SET logout_at = NOW()
+            WHERE user_id = ?
+              AND logout_at IS NULL
+            ORDER BY login_at DESC
+            LIMIT 1
+        `;
+
+        return db.query(byUserSql, [userId], (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+            return res.json({ message: 'Logout logged' });
+        });
+    }
+
+    return res.json({ message: 'No active session data provided' });
 });
 
 // --- 8. FORGOT PASSWORD: SEND OTP ---
@@ -814,7 +976,7 @@ app.post('/api/orders', (req, res) => {
                             db.query("DELETE FROM cart WHERE user_id = ?", [userId]);
 
                             // Send receipt email
-                            sendOrderReceipt(orderId, userId, res);
+                            sendOrderReceipt(orderId, userId, newInvoiceId, res);
                         });
                     }
                 });
@@ -824,7 +986,7 @@ app.post('/api/orders', (req, res) => {
 });
 
 // Function to send order receipt email
-function sendOrderReceipt(orderId, userId, res) {
+function sendOrderReceipt(orderId, userId, invoiceId, res) {
     // Get user email
     db.query("SELECT email, first_name, last_name FROM user_accounts WHERE user_id = ?", [userId], (err, userResult) => {
         if (err) {
@@ -865,6 +1027,18 @@ function sendOrderReceipt(orderId, userId, res) {
                 };
                 
                 transporter.sendMail(mailOptions, (error, info) => {
+                    if (!error && invoiceId) {
+                        db.query(
+                            "INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)",
+                            [invoiceId, userId],
+                            (logErr) => {
+                                if (logErr) {
+                                    console.error("Invoice request log error:", logErr);
+                                }
+                            }
+                        );
+                    }
+
                     if (error) {
                         console.error("Email error:", error);
                     } else {
@@ -876,6 +1050,1354 @@ function sendOrderReceipt(orderId, userId, res) {
         });
     });
 }
+
+// --- 27W. WORKER/ADMIN ORDERS LIST ---
+app.get('/api/worker/orders', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `
+        SELECT o.order_id,
+               o.total_amount AS order_total,
+               o.status AS order_status,
+               o.created_at AS order_date,
+               o.payment_method,
+               u.user_id,
+               CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+               u.email
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        ORDER BY o.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ orders: results });
+    });
+});
+
+// --- 27X. WORKER/ADMIN ORDER STATUS UPDATE ---
+app.put('/api/worker/orders/:orderId', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+        return res.status(400).json({ message: 'Status is required' });
+    }
+
+    db.query('UPDATE orders SET status = ? WHERE order_id = ?', [status, orderId], (err) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ message: 'Order updated successfully' });
+    });
+});
+
+// --- 27Y. WORKER/ADMIN SALES HISTORY ---
+app.get('/api/worker/sales-history', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `
+        SELECT o.order_id,
+               o.total_amount AS order_total,
+               o.status AS order_status,
+               o.updated_at AS order_date,
+               o.payment_method,
+               CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+               u.email
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        WHERE o.status = 'completed'
+        ORDER BY o.updated_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ salesHistory: results });
+    });
+});
+
+// --- 27Z. WORKER/ADMIN REFUND REQUESTS ---
+app.get('/api/worker/refunds', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `
+        SELECT cr.request_id,
+               cr.order_id,
+               cr.reason AS refund_reason,
+               cr.status AS refund_status,
+               cr.created_at AS request_date,
+               o.total_amount AS refund_amount,
+               o.status AS order_status,
+               CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+               u.email
+        FROM order_cancellation_requests cr
+        JOIN orders o ON cr.order_id = o.order_id
+        JOIN user_accounts u ON o.user_id = u.user_id
+        ORDER BY cr.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ refunds: results });
+    });
+});
+
+app.post('/api/worker/refund/:orderId', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+    const { reason, userId } = req.body;
+
+    db.query('SELECT * FROM order_cancellation_requests WHERE order_id = ? ORDER BY created_at DESC LIMIT 1', [orderId], (findErr, rows) => {
+        if (findErr) return res.status(500).json({ message: 'Database error' });
+
+        const approveRefund = (requestId) => {
+            db.query(
+                "UPDATE order_cancellation_requests SET status = 'approved', reviewed_by = ?, reviewed_at = NOW(), reason = COALESCE(NULLIF(?, ''), reason) WHERE request_id = ?",
+                [userId, reason || null, requestId],
+                (updateReqErr) => {
+                    if (updateReqErr) return res.status(500).json({ message: 'Database error' });
+
+                    db.query("UPDATE orders SET status = 'cancelled', cancellation_status = 'approved' WHERE order_id = ?", [orderId], (updateOrderErr) => {
+                        if (updateOrderErr) return res.status(500).json({ message: 'Database error' });
+
+                        db.query('SELECT product_id, quantity FROM order_items WHERE order_id = ?', [orderId], (itemsErr, items) => {
+                            if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+                            items.forEach((item) => {
+                                db.query('UPDATE products SET stock = stock + ? WHERE product_id = ?', [item.quantity, item.product_id]);
+                            });
+
+                            res.json({ message: 'Refund approved successfully' });
+                        });
+                    });
+                }
+            );
+        };
+
+        if (rows.length > 0) {
+            if (rows[0].status !== 'pending') {
+                return res.status(400).json({ message: 'Refund request already processed' });
+            }
+            return approveRefund(rows[0].request_id);
+        }
+
+        db.query('SELECT user_id FROM orders WHERE order_id = ?', [orderId], (orderErr, orderRows) => {
+            if (orderErr) return res.status(500).json({ message: 'Database error' });
+            if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+            db.query(
+                "INSERT INTO order_cancellation_requests (order_id, user_id, reason, status, reviewed_by, reviewed_at) VALUES (?, ?, ?, 'pending', NULL, NULL)",
+                [orderId, orderRows[0].user_id, reason || null],
+                (insertErr, insertRes) => {
+                    if (insertErr) return res.status(500).json({ message: 'Database error' });
+                    approveRefund(insertRes.insertId);
+                }
+            );
+        });
+    });
+});
+
+// --- 27AA. WORKER/ADMIN RECEIPT HISTORY ---
+app.get('/api/worker/receipts', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `
+        SELECT o.order_id,
+               o.total_amount AS total,
+               o.created_at AS order_date,
+               o.payment_method,
+               o.shipping_address,
+               CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+               COUNT(oi.order_item_id) AS items_count,
+               SUM(oi.price * oi.quantity) AS subtotal,
+               0 AS tax
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN order_items oi ON o.order_id = oi.order_id
+        GROUP BY o.order_id, o.total_amount, o.created_at, o.payment_method, o.shipping_address, u.first_name, u.last_name
+        ORDER BY o.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ receipts: results });
+    });
+});
+
+// --- 27AB. WORKER/ADMIN SALES REPORTS ---
+app.get('/api/worker/reports', checkRole(['admin', 'worker']), (req, res) => {
+    const period = req.query.period || 'today';
+
+    let whereClause = '';
+    if (period === 'today') whereClause = 'DATE(o.created_at) = CURDATE()';
+    if (period === 'week') whereClause = 'YEARWEEK(o.created_at, 1) = YEARWEEK(CURDATE(), 1)';
+    if (period === 'month') whereClause = 'MONTH(o.created_at) = MONTH(CURDATE()) AND YEAR(o.created_at) = YEAR(CURDATE())';
+    if (period === 'year') whereClause = 'YEAR(o.created_at) = YEAR(CURDATE())';
+    if (!whereClause) whereClause = '1=1';
+
+    const summarySql = `
+        SELECT
+            COALESCE(SUM(o.total_amount), 0) AS totalSales,
+            COUNT(*) AS totalOrders,
+            COALESCE(AVG(o.total_amount), 0) AS avgOrderValue
+        FROM orders o
+        WHERE ${whereClause}
+          AND o.status IN ('completed', 'processing', 'cancelled')
+    `;
+
+    const topProductsSql = `
+        SELECT
+            p.name AS product_name,
+            SUM(oi.quantity) AS quantity_sold,
+            SUM(oi.quantity * oi.price) AS revenue
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.order_id
+        JOIN products p ON oi.product_id = p.product_id
+        WHERE ${whereClause}
+          AND o.status IN ('completed', 'processing', 'cancelled')
+        GROUP BY p.product_id, p.name
+        ORDER BY revenue DESC
+        LIMIT 5
+    `;
+
+    db.query(summarySql, (summaryErr, summaryRows) => {
+        if (summaryErr) return res.status(500).json({ message: 'Database error' });
+
+        db.query(topProductsSql, (topErr, topRows) => {
+            if (topErr) return res.status(500).json({ message: 'Database error' });
+
+            const summary = summaryRows[0] || { totalSales: 0, totalOrders: 0, avgOrderValue: 0 };
+            res.json({
+                totalSales: Number(summary.totalSales || 0),
+                totalOrders: Number(summary.totalOrders || 0),
+                avgOrderValue: Number(summary.avgOrderValue || 0),
+                topProducts: topRows || []
+            });
+        });
+    });
+});
+
+// --- 27AC. WORKER/ADMIN MANUAL RECEIPT EMAIL SEND ---
+app.post('/api/worker/send-receipt-email', checkRole(['admin', 'worker']), (req, res) => {
+    const { order_id } = req.body;
+
+    if (!order_id) {
+        return res.status(400).json({ message: 'Order ID is required' });
+    }
+
+    db.query("SELECT o.*, u.user_id, u.email, u.first_name, u.last_name FROM orders o JOIN user_accounts u ON o.user_id = u.user_id WHERE o.order_id = ?", [order_id], (orderErr, orderRows) => {
+        if (orderErr) return res.status(500).json({ message: 'Database error' });
+        if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const order = orderRows[0];
+        const userName = `${order.first_name || ''} ${order.last_name || ''}`.trim();
+
+        db.query(`SELECT oi.*, p.name FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ?`, [order_id], (itemsErr, itemsRows) => {
+            if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+            const receiptHtml = generateReceiptHtml(order, itemsRows, userName);
+            const mailOptions = {
+                from: 'tongtongornamental@gmail.com',
+                to: order.email,
+                subject: `Order Receipt #${order_id} - TongTong Ornamental Fish Store`,
+                html: receiptHtml
+            };
+
+            transporter.sendMail(mailOptions, (mailErr) => {
+                if (mailErr) return res.status(500).json({ message: 'Failed to send receipt email' });
+
+                db.query('SELECT invoice_id FROM invoices WHERE order_id = ? LIMIT 1', [order_id], (invoiceErr, invoiceRows) => {
+                    if (!invoiceErr && invoiceRows.length > 0) {
+                        db.query(
+                            'INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)',
+                            [invoiceRows[0].invoice_id, order.user_id],
+                            () => res.json({ message: 'Receipt email sent successfully' })
+                        );
+                    } else {
+                        res.json({ message: 'Receipt email sent successfully' });
+                    }
+                });
+            });
+        });
+    });
+});
+
+// --- 27A. WORKER/ADMIN QUICK INVOICE DATA ---
+app.get('/api/worker/invoice-orders', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `SELECT o.order_id, o.user_id, o.total_amount, o.status, o.created_at AS order_date,
+                        u.first_name, u.last_name, u.email,
+                        i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name,
+                        o.paid_by_name
+                 FROM orders o
+                 JOIN user_accounts u ON o.user_id = u.user_id
+                 LEFT JOIN invoices i ON o.order_id = i.order_id
+                 ORDER BY o.created_at DESC`;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        const orders = results.map(row => ({
+            order_id: row.order_id,
+            user_id: row.user_id,
+            customer_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+            email: row.email,
+            total_amount: row.total_amount,
+            status: row.status,
+            order_date: row.order_date,
+            invoice_id: row.invoice_id,
+            invoice_number: row.invoice_number,
+            invoice_pdf_path: row.invoice_pdf_path,
+            issued_by_name: row.issued_by_name,
+            paid_by_name: row.paid_by_name,
+            has_invoice: Boolean(row.invoice_id)
+        }));
+
+        res.json(orders);
+    });
+});
+
+// --- 27B. WORKER/ADMIN QUICK INVOICE GENERATION ---
+app.post('/api/worker/generate-invoice', checkRole(['admin', 'worker']), (req, res) => {
+    const { order_id, notes, userId } = req.body;
+
+    if (!order_id) {
+        return res.status(400).json({ message: 'Order ID is required' });
+    }
+
+    db.query(
+        `SELECT o.*, u.first_name, u.last_name, u.email, u.contact_number
+         FROM orders o
+         JOIN user_accounts u ON o.user_id = u.user_id
+         WHERE o.order_id = ?`,
+        [order_id],
+        (orderErr, orderResults) => {
+            if (orderErr) return res.status(500).json({ message: 'Database error' });
+            if (orderResults.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+            const order = orderResults[0];
+
+            db.query('SELECT first_name, last_name FROM user_accounts WHERE user_id = ? LIMIT 1', [userId || 0], (issuerErr, issuerRows) => {
+                if (issuerErr) return res.status(500).json({ message: 'Database error' });
+
+                const issuedByName = issuerRows.length > 0
+                    ? `${issuerRows[0].first_name || ''} ${issuerRows[0].last_name || ''}`.trim()
+                    : 'Unknown staff';
+
+                db.query(
+                    'SELECT * FROM invoices WHERE order_id = ?',
+                    [order_id],
+                    (invoiceErr, invoiceResults) => {
+                        if (invoiceErr) return res.status(500).json({ message: 'Database error' });
+
+                        const generatePdfAndRespond = async (invoiceRecord) => {
+                        try {
+                            db.query(
+                                'SELECT oi.quantity, oi.price, oi.unit_discount, p.name FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ?',
+                                [order_id],
+                                async (itemsErr, itemRows) => {
+                                    if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+                                    const safeInvoiceNumber = (invoiceRecord.invoice_number || `INV-${Date.now()}-${order_id}`).replace(/[^A-Za-z0-9-_]/g, '_');
+                                    const fileName = `${safeInvoiceNumber}.pdf`;
+                                    const absPath = path.join(invoiceUploadDir, fileName);
+                                    const publicPath = `/uploads/invoices/${fileName}`;
+
+                                    await buildInvoicePdf(
+                                        { ...order, status: order.status || 'pending', issued_by_name: issuedByName },
+                                        `${order.first_name || ''} ${order.last_name || ''}`.trim(),
+                                        itemRows || [],
+                                        invoiceRecord.invoice_number || safeInvoiceNumber,
+                                        absPath,
+                                        { issuedBy: issuedByName, paidBy: order.paid_by_name || '' }
+                                    );
+
+                                    db.query('UPDATE invoices SET invoice_pdf_path = ? WHERE invoice_id = ?', [publicPath, invoiceRecord.invoice_id]);
+                                    db.query('UPDATE orders SET invoice_pdf_path = ? WHERE order_id = ?', [publicPath, order_id]);
+
+                                    return res.json({
+                                        message: invoiceResults.length > 0 ? 'Invoice already exists' : 'Invoice generated successfully',
+                                        invoice: {
+                                            ...invoiceRecord,
+                                            invoice_pdf_path: publicPath,
+                                            issued_by_name: issuedByName
+                                        },
+                                        order,
+                                        notes: notes || ''
+                                    });
+                                }
+                            );
+                        } catch (pdfErr) {
+                            return res.status(500).json({ message: 'Failed to generate invoice PDF' });
+                        }
+                        };
+
+                        if (invoiceResults.length > 0) {
+                            db.query(
+                                'UPDATE invoices SET issued_by_user_id = ?, issued_by_name = ? WHERE invoice_id = ?',
+                                [userId || null, issuedByName, invoiceResults[0].invoice_id]
+                            );
+                            return generatePdfAndRespond({ ...invoiceResults[0], issued_by_name: issuedByName });
+                        }
+
+                        const invoiceNumber = `INV-${Date.now()}-${order_id}`;
+                        db.query(
+                            'INSERT INTO invoices (order_id, invoice_number, payment_method, invoice_pdf_path, issued_by_user_id, issued_by_name) VALUES (?, ?, ?, ?, ?, ?)',
+                            [order_id, invoiceNumber, order.payment_method || 'cash_on_store', null, userId || null, issuedByName],
+                            (insertErr, insertResult) => {
+                                if (insertErr) return res.status(500).json({ message: 'Invoice creation failed' });
+
+                                return generatePdfAndRespond({
+                                    invoice_id: insertResult.insertId,
+                                    order_id,
+                                    invoice_number: invoiceNumber,
+                                    payment_method: order.payment_method || 'cash_on_store',
+                                    invoice_pdf_path: null,
+                                    issued_by_name: issuedByName,
+                                    created_at: new Date()
+                                });
+                            }
+                        );
+                    }
+                );
+            });
+        }
+    );
+});
+
+// --- 27BA. WORKER/ADMIN MANUAL INVOICE STATUS UPDATE (PAID OR CANCELLED) ---
+app.put('/api/worker/invoice/:orderId/status', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+    const status = String(req.body?.status || '').toLowerCase();
+    const actorUserId = Number(req.body?.userId || 0);
+
+    if (!['paid', 'cancelled'].includes(status)) {
+        return res.status(400).json({ message: 'Status must be paid or cancelled' });
+    }
+
+    const mappedOrderStatus = status === 'paid' ? 'completed' : 'cancelled';
+    const cancellationStatus = status === 'cancelled' ? 'approved' : 'none';
+
+    db.query('SELECT invoice_id FROM invoices WHERE order_id = ? LIMIT 1', [orderId], (invoiceErr, invoiceRows) => {
+        if (invoiceErr) return res.status(500).json({ message: 'Database error' });
+        if (invoiceRows.length === 0) {
+            return res.status(400).json({ message: 'Generate invoice first before setting Paid/Cancelled' });
+        }
+
+        db.query('SELECT first_name, last_name FROM user_accounts WHERE user_id = ? LIMIT 1', [actorUserId], (actorErr, actorRows) => {
+            if (actorErr) return res.status(500).json({ message: 'Database error' });
+
+            const actorName = actorRows.length > 0
+                ? `${actorRows[0].first_name || ''} ${actorRows[0].last_name || ''}`.trim()
+                : null;
+
+            db.query(
+                `UPDATE orders
+                 SET status = ?,
+                     cancellation_status = ?,
+                     paid_by_user_id = ?,
+                     paid_by_name = ?
+                 WHERE order_id = ?`,
+                [
+                    mappedOrderStatus,
+                    cancellationStatus,
+                    status === 'paid' ? (actorUserId || null) : null,
+                    status === 'paid' ? actorName : null,
+                    orderId
+                ],
+                (err) => {
+                    if (err) return res.status(500).json({ message: 'Database error' });
+                    return res.json({ message: 'Invoice payment status updated successfully' });
+                }
+            );
+        });
+    });
+});
+
+// --- 27BB. WORKER/ADMIN SEND INVOICE EMAIL TO CLIENT ---
+app.post('/api/worker/send-invoice-email', checkRole(['admin', 'worker']), (req, res) => {
+    const { order_id, userId } = req.body;
+
+    if (!order_id) {
+        return res.status(400).json({ message: 'Order ID is required' });
+    }
+
+    const sql = `
+         SELECT o.order_id, o.total_amount, o.created_at, o.status,
+               u.user_id, u.email, u.first_name, u.last_name,
+             i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name,
+             o.paid_by_name
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON o.order_id = i.order_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    db.query(sql, [order_id], (orderErr, orderRows) => {
+        if (orderErr) return res.status(500).json({ message: 'Database error' });
+        if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const row = orderRows[0];
+        if (!row.invoice_id) {
+            return res.status(400).json({ message: 'Generate an invoice first before sending email' });
+        }
+
+        const invoiceUrl = row.invoice_pdf_path
+            ? `http://localhost:5000${row.invoice_pdf_path}`
+            : `http://localhost:5000/api/orders/${row.order_id}/invoice-pdf?userId=${row.user_id}`;
+
+        const mailOptions = {
+            from: 'tongtongornamental@gmail.com',
+            to: row.email,
+            subject: `Invoice ${row.invoice_number} - TongTong Ornamental Fish Store`,
+            html: `
+                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                    <h2>TongTong Ornamental Fish Store</h2>
+                    <p>Hello ${row.first_name || ''} ${row.last_name || ''},</p>
+                    <p>Your invoice for <strong>Order #${row.order_id}</strong> is ready.</p>
+                    <p><strong>Invoice Number:</strong> ${row.invoice_number}</p>
+                    <p><strong>Total Amount:</strong> PHP ${Number(row.total_amount || 0).toFixed(2)}</p>
+                    <p><strong>Prepared By:</strong> ${row.issued_by_name || 'Not specified'}</p>
+                    <p><strong>Payment Confirmed By:</strong> ${row.paid_by_name || 'Pending payment'}</p>
+                    <p>You can download and keep this PDF as receipt proof for in-store payment:</p>
+                    <p><a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer">Download Invoice PDF</a></p>
+                </div>
+            `
+        };
+
+        transporter.sendMail(mailOptions, (mailErr) => {
+            if (mailErr) return res.status(500).json({ message: 'Failed to send invoice email' });
+
+            db.query(
+                'INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)',
+                [row.invoice_id, userId || row.user_id],
+                () => res.json({ message: 'Invoice email sent successfully' })
+            );
+        });
+    });
+});
+
+// --- 27BC. CLIENT/STAFF INVOICE PDF DOWNLOAD ---
+app.get('/api/orders/:orderId/invoice-pdf', (req, res) => {
+    const { orderId } = req.params;
+    const requesterUserId = Number(req.query.userId || 0);
+
+    if (!requesterUserId) {
+        return res.status(401).json({ message: 'User ID is required' });
+    }
+
+    const accessSql = `
+        SELECT o.order_id, o.user_id, o.total_amount, o.created_at, o.status,
+             o.paid_by_name,
+               u.email, u.first_name, u.last_name,
+               r.role_name,
+             i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        JOIN user_accounts ru ON ru.user_id = ?
+        JOIN roles r ON ru.role_id = r.role_id
+        LEFT JOIN invoices i ON o.order_id = i.order_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    db.query(accessSql, [requesterUserId, orderId], (accessErr, rows) => {
+        if (accessErr) return res.status(500).json({ message: 'Database error' });
+        if (rows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const row = rows[0];
+        const requesterRole = String(row.role_name || '').toLowerCase();
+        const isStaff = requesterRole === 'admin' || requesterRole === 'worker' || requesterRole === 'moderator';
+        const isOwner = Number(row.user_id) === requesterUserId;
+
+        if (!isStaff && !isOwner) {
+            return res.status(403).json({ message: 'Access denied' });
+        }
+
+        if (!row.invoice_id) {
+            return res.status(404).json({ message: 'Invoice not found for this order' });
+        }
+
+        const sendPdf = (pdfPath) => {
+            const absolute = path.join(__dirname, pdfPath.replace(/^\//, ''));
+            if (!fs.existsSync(absolute)) {
+                return res.status(404).json({ message: 'Invoice PDF file not found' });
+            }
+            return res.download(absolute, `${row.invoice_number || `invoice-${orderId}`}.pdf`);
+        };
+
+        if (row.invoice_pdf_path) {
+            return sendPdf(row.invoice_pdf_path);
+        }
+
+        db.query(
+            'SELECT oi.quantity, oi.price, p.name FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.order_id = ?',
+            [orderId],
+            async (itemsErr, itemRows) => {
+                if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+                const safeInvoiceNumber = (row.invoice_number || `INV-${Date.now()}-${orderId}`).replace(/[^A-Za-z0-9-_]/g, '_');
+                const fileName = `${safeInvoiceNumber}.pdf`;
+                const absPath = path.join(invoiceUploadDir, fileName);
+                const publicPath = `/uploads/invoices/${fileName}`;
+
+                try {
+                    await buildInvoicePdf(
+                        {
+                            ...row,
+                            order_id: Number(orderId),
+                            total_amount: row.total_amount,
+                            created_at: row.created_at,
+                            status: row.status,
+                            issued_by_name: row.issued_by_name,
+                            paid_by_name: row.paid_by_name
+                        },
+                        `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+                        itemRows || [],
+                        row.invoice_number || safeInvoiceNumber,
+                        absPath,
+                        { issuedBy: row.issued_by_name || '', paidBy: row.paid_by_name || '' }
+                    );
+
+                    db.query('UPDATE invoices SET invoice_pdf_path = ? WHERE invoice_id = ?', [publicPath, row.invoice_id]);
+                    db.query('UPDATE orders SET invoice_pdf_path = ? WHERE order_id = ?', [publicPath, orderId]);
+
+                    return sendPdf(publicPath);
+                } catch (pdfErr) {
+                    return res.status(500).json({ message: 'Failed to generate invoice PDF' });
+                }
+            }
+        );
+    });
+});
+
+// --- 27C. WORKER/ADMIN EMAIL RECEIPT HISTORY ---
+app.get('/api/worker/email-receipts', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `SELECT ir.request_id AS email_id,
+                        ir.invoice_id,
+                        ir.request_time AS sent_at,
+                        ir.email_sent,
+                        o.order_id,
+                        o.created_at AS order_date,
+                        u.user_id,
+                        u.email AS email_address,
+                        u.first_name,
+                        u.last_name,
+                        i.invoice_number
+                 FROM invoice_requests ir
+                 JOIN invoices i ON ir.invoice_id = i.invoice_id
+                 JOIN orders o ON i.order_id = o.order_id
+                 JOIN user_accounts u ON o.user_id = u.user_id
+                 ORDER BY ir.request_time DESC`;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        res.json(results.map(row => ({
+            email_id: row.email_id,
+            invoice_id: row.invoice_id,
+            order_id: row.order_id,
+            order_date: row.order_date,
+            customer_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+            email_address: row.email_address,
+            email_status: row.email_sent ? 'sent' : 'pending',
+            sent_at: row.sent_at,
+            invoice_number: row.invoice_number
+        })));
+    });
+});
+
+// --- 27D. WORKER/ADMIN CASH REGISTER ---
+app.get('/api/worker/cash-register', checkRole(['admin', 'worker']), (req, res) => {
+    const { userId } = req.query;
+
+    const summarySql = `
+        SELECT
+            COALESCE((
+                SELECT SUM(CASE WHEN payment_method LIKE 'cash%' THEN total_amount ELSE 0 END)
+                FROM orders
+                WHERE status = 'completed' AND DATE(updated_at) = CURDATE()
+            ), 0) AS totalCash,
+            COALESCE((
+                SELECT SUM(CASE WHEN payment_method LIKE 'card%' OR payment_method LIKE 'gcash%' OR payment_method LIKE 'online%' THEN total_amount ELSE 0 END)
+                FROM orders
+                WHERE status = 'completed' AND DATE(updated_at) = CURDATE()
+            ), 0) AS totalCard,
+            COALESCE((
+                SELECT SUM(CASE WHEN payment_method LIKE 'cash%' THEN total_amount ELSE 0 END)
+                FROM orders
+                WHERE status = 'completed' AND DATE(updated_at) = CURDATE()
+            ), 0)
+                + COALESCE((
+                    SELECT SUM(CASE WHEN entry_type = 'cash-adjustment' THEN amount ELSE 0 END)
+                    FROM cash_register_entries
+                    WHERE DATE(created_at) = CURDATE() AND (? = 0 OR user_id = ?)
+                ), 0)
+                - COALESCE((
+                    SELECT SUM(CASE WHEN entry_type IN ('cash-return', 'cash-expense') THEN amount ELSE 0 END)
+                    FROM cash_register_entries
+                    WHERE DATE(created_at) = CURDATE() AND (? = 0 OR user_id = ?)
+                ), 0) AS expectedCash,
+            COALESCE((
+                SELECT actual_cash
+                FROM cash_register_reconciliations
+                WHERE (? = 0 OR user_id = ?)
+                ORDER BY created_at DESC
+                LIMIT 1
+            ), 0) AS actualCash,
+            COALESCE((
+                SELECT COUNT(*)
+                FROM orders
+                WHERE status = 'completed' AND DATE(updated_at) = CURDATE()
+            ), 0) AS transactionCount`;
+
+    const entriesSql = `
+        SELECT
+            e.entry_id,
+            e.entry_type,
+            e.amount,
+            e.description,
+            e.created_at,
+            u.first_name,
+            u.last_name
+        FROM cash_register_entries e
+        JOIN user_accounts u ON e.user_id = u.user_id
+        WHERE DATE(e.created_at) = CURDATE()
+        ORDER BY e.created_at DESC`;
+
+    const pendingInvoicesSql = `
+        SELECT
+            o.order_id,
+            o.total_amount,
+            o.status,
+            o.created_at,
+            o.payment_method,
+            u.email,
+            u.contact_number,
+            CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+            i.invoice_id,
+            i.invoice_number
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON o.order_id = i.order_id
+        WHERE o.status = 'pending'
+        ORDER BY o.created_at DESC`;
+
+    db.query(summarySql, [userId || 0, userId || 0, userId || 0, userId || 0, userId || 0, userId || 0], (summaryErr, summaryResults) => {
+        if (summaryErr) return res.status(500).json({ message: 'Database error' });
+
+        db.query(entriesSql, (entriesErr, entriesResults) => {
+            if (entriesErr) return res.status(500).json({ message: 'Database error' });
+
+            db.query(pendingInvoicesSql, (pendingErr, pendingRows) => {
+                if (pendingErr) return res.status(500).json({ message: 'Database error' });
+
+                const summary = summaryResults[0] || {};
+                const expectedCash = Number(summary.expectedCash || 0);
+                const actualCash = Number(summary.actualCash || 0);
+
+                res.json({
+                    summary: {
+                        totalCash: Number(summary.totalCash || 0),
+                        totalCard: Number(summary.totalCard || 0),
+                        expectedCash,
+                        actualCash,
+                        discrepancy: actualCash - expectedCash,
+                        transactionCount: Number(summary.transactionCount || 0)
+                    },
+                    transactions: entriesResults.map(entry => ({
+                        entry_id: entry.entry_id,
+                        type: entry.entry_type,
+                        amount: entry.amount,
+                        description: entry.description,
+                        timestamp: entry.created_at,
+                        user_name: `${entry.first_name || ''} ${entry.last_name || ''}`.trim()
+                    })),
+                    pendingInvoices: (pendingRows || []).map(row => ({
+                        order_id: row.order_id,
+                        total_amount: row.total_amount,
+                        status: row.status,
+                        created_at: row.created_at,
+                        payment_method: row.payment_method,
+                        email: row.email,
+                        contact_number: row.contact_number,
+                        customer_name: row.customer_name,
+                        invoice_id: row.invoice_id,
+                        invoice_number: row.invoice_number,
+                        has_invoice: Boolean(row.invoice_id)
+                    }))
+                });
+            });
+        });
+    });
+});
+
+app.put('/api/worker/cash-register/order/:orderId/status', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+    const { status, userId, paymentMethod = 'cash_on_store', notes = '' } = req.body;
+
+    const normalizedStatus = String(status || '').toLowerCase();
+    if (!['paid', 'cancelled'].includes(normalizedStatus)) {
+        return res.status(400).json({ message: 'Status must be paid or cancelled' });
+    }
+
+    if (normalizedStatus === 'paid') {
+        const allowedMethods = ['cash_on_store', 'cash', 'card', 'gcash', 'online'];
+        if (!allowedMethods.includes(String(paymentMethod).toLowerCase())) {
+            return res.status(400).json({ message: 'Invalid payment method' });
+        }
+
+        const detailsSql = `
+            SELECT o.order_id, o.total_amount, o.status,
+                   CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+                   i.invoice_id, i.invoice_number,
+                   CONCAT(s.first_name, ' ', s.last_name) AS staff_name
+            FROM orders o
+            JOIN user_accounts c ON o.user_id = c.user_id
+            LEFT JOIN invoices i ON o.order_id = i.order_id
+            LEFT JOIN user_accounts s ON s.user_id = ?
+            WHERE o.order_id = ?
+            LIMIT 1
+        `;
+
+        return db.query(detailsSql, [userId, orderId], (detailsErr, rows) => {
+            if (detailsErr) return res.status(500).json({ message: 'Database error' });
+            if (rows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+            const row = rows[0];
+            const current = String(row.status || '').toLowerCase();
+            if (!row.invoice_id) return res.status(400).json({ message: 'Invoice is required before accepting payment' });
+            if (current === 'completed') return res.status(400).json({ message: 'Order is already paid/completed' });
+            if (current === 'cancelled') return res.status(400).json({ message: 'Cannot accept payment for a cancelled order' });
+
+            const normalizedMethod = String(paymentMethod).toLowerCase();
+
+            db.query(
+                'UPDATE orders SET status = ?, cancellation_status = ?, payment_method = ?, paid_by_user_id = ?, paid_by_name = ? WHERE order_id = ?',
+                ['completed', 'none', normalizedMethod, userId, row.staff_name || null, orderId],
+                (updateErr) => {
+                    if (updateErr) return res.status(500).json({ message: 'Failed to update order status' });
+
+                    if (!normalizedMethod.startsWith('cash')) {
+                        return res.json({ message: 'Order marked as paid' });
+                    }
+
+                    const detailParts = [
+                        `Cash payment accepted for Order #${row.order_id}`,
+                        row.invoice_number ? `(Invoice ${row.invoice_number})` : '',
+                        `Customer: ${row.customer_name || '-'}`,
+                        `By: ${row.staff_name || 'Staff'}`,
+                        notes ? `Notes: ${String(notes).trim()}` : ''
+                    ].filter(Boolean);
+
+                    const description = detailParts.join(' | ').slice(0, 500);
+
+                    db.query(
+                        'INSERT INTO cash_register_entries (user_id, entry_type, amount, description) VALUES (?, ?, ?, ?)',
+                        [userId, 'cash', row.total_amount, description],
+                        (entryErr) => {
+                            if (entryErr) return res.status(500).json({ message: 'Order marked paid, but failed to log cash entry' });
+                            return res.json({ message: 'Order marked as paid' });
+                        }
+                    );
+                }
+            );
+        });
+    }
+
+    db.query('SELECT status FROM orders WHERE order_id = ? LIMIT 1', [orderId], (findErr, findRows) => {
+        if (findErr) return res.status(500).json({ message: 'Database error' });
+        if (findRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const current = String(findRows[0].status || '').toLowerCase();
+        if (current === 'cancelled') return res.status(400).json({ message: 'Order is already cancelled' });
+        if (current === 'completed') return res.status(400).json({ message: 'Order is already paid/completed' });
+
+        db.query(
+            'UPDATE orders SET status = ?, cancellation_status = ?, paid_by_user_id = NULL, paid_by_name = NULL WHERE order_id = ?',
+            ['cancelled', 'approved', orderId],
+            (updateErr) => {
+                if (updateErr) return res.status(500).json({ message: 'Failed to update order status' });
+                return res.json({ message: 'Order marked as cancelled' });
+            }
+        );
+    });
+});
+
+app.post('/api/worker/cash-register/accept-payment', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId, paymentMethod, userId, notes } = req.body;
+
+    if (!orderId || !paymentMethod || !userId) {
+        return res.status(400).json({ message: 'orderId, paymentMethod, and userId are required' });
+    }
+
+    const allowedMethods = ['cash_on_store', 'cash', 'card', 'gcash', 'online'];
+    if (!allowedMethods.includes(String(paymentMethod).toLowerCase())) {
+        return res.status(400).json({ message: 'Invalid payment method' });
+    }
+
+    const detailsSql = `
+        SELECT o.order_id, o.total_amount, o.status,
+               CONCAT(c.first_name, ' ', c.last_name) AS customer_name,
+               i.invoice_id, i.invoice_number,
+               CONCAT(s.first_name, ' ', s.last_name) AS staff_name
+        FROM orders o
+        JOIN user_accounts c ON o.user_id = c.user_id
+        LEFT JOIN invoices i ON o.order_id = i.order_id
+        LEFT JOIN user_accounts s ON s.user_id = ?
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    db.query(detailsSql, [userId, orderId], (detailsErr, rows) => {
+        if (detailsErr) return res.status(500).json({ message: 'Database error' });
+        if (rows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const row = rows[0];
+        if (!row.invoice_id) {
+            return res.status(400).json({ message: 'Invoice is required before accepting payment' });
+        }
+        if (row.status === 'completed') {
+            return res.status(400).json({ message: 'Payment already accepted for this order' });
+        }
+        if (row.status === 'cancelled') {
+            return res.status(400).json({ message: 'Cannot accept payment for a cancelled order' });
+        }
+
+        const normalizedMethod = String(paymentMethod).toLowerCase();
+        db.query(
+            'UPDATE orders SET status = ?, cancellation_status = ?, payment_method = ?, paid_by_user_id = ?, paid_by_name = ? WHERE order_id = ?',
+            ['completed', 'none', normalizedMethod, userId, row.staff_name || null, orderId],
+            (updateErr) => {
+                if (updateErr) return res.status(500).json({ message: 'Failed to update order payment status' });
+
+                if (!normalizedMethod.startsWith('cash')) {
+                    return res.json({ message: 'Payment accepted successfully' });
+                }
+
+                const detailParts = [
+                    `Cash payment accepted for Order #${row.order_id}`,
+                    row.invoice_number ? `(Invoice ${row.invoice_number})` : '',
+                    `Customer: ${row.customer_name || '-'}`,
+                    `By: ${row.staff_name || 'Staff'}`,
+                    notes ? `Notes: ${String(notes).trim()}` : ''
+                ].filter(Boolean);
+
+                const description = detailParts.join(' | ').slice(0, 500);
+
+                db.query(
+                    'INSERT INTO cash_register_entries (user_id, entry_type, amount, description) VALUES (?, ?, ?, ?)',
+                    [userId, 'cash', row.total_amount, description],
+                    (entryErr) => {
+                        if (entryErr) return res.status(500).json({ message: 'Payment accepted but failed to log cash entry' });
+                        return res.json({ message: 'Payment accepted successfully' });
+                    }
+                );
+            }
+        );
+    });
+});
+
+app.post('/api/worker/cash-register/entry', checkRole(['admin', 'worker']), (req, res) => {
+    const { amount, type, description, userId } = req.body;
+
+    if (!amount || !type || !userId) {
+        return res.status(400).json({ message: 'Amount, type, and userId are required' });
+    }
+
+    const sql = 'INSERT INTO cash_register_entries (user_id, entry_type, amount, description) VALUES (?, ?, ?, ?)';
+    db.query(sql, [userId, type, amount, description || null], (err) => {
+        if (err) return res.status(500).json({ message: 'Failed to record cash entry' });
+        res.json({ message: 'Cash entry recorded successfully' });
+    });
+});
+
+app.post('/api/worker/cash-register/manual-order', checkRole(['admin', 'worker']), (req, res) => {
+    const {
+        customer_name,
+        email,
+        contact_number,
+        total_amount,
+        subtotal,
+        discount_amount,
+        discount_type,
+        items,
+        userId
+    } = req.body;
+
+    const normalizedCustomer = String(customer_name || '').trim();
+    const normalizedDiscountType = String(discount_type || 'regular').toLowerCase();
+    const allowedDiscountTypes = ['regular', 'senior', 'pwd'];
+
+    if (!normalizedCustomer || !total_amount || !userId || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: 'Customer name, items, total amount, and userId are required' });
+    }
+
+    if (!allowedDiscountTypes.includes(normalizedDiscountType)) {
+        return res.status(400).json({ message: 'Invalid discount type' });
+    }
+
+    const cleanedItems = items
+        .map((item) => ({
+            product_id: Number(item.product_id),
+            quantity: Number(item.quantity),
+            price: Number(item.price || 0),
+            product_name: String(item.product_name || '').trim()
+        }))
+        .filter((item) => item.product_id > 0 && item.quantity > 0 && item.price >= 0);
+
+    if (cleanedItems.length === 0) {
+        return res.status(400).json({ message: 'At least one valid product item is required' });
+    }
+
+    const discountRate = normalizedDiscountType === 'regular' ? 0 : 0.05;
+    const computedSubtotal = cleanedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const computedDiscount = computedSubtotal * discountRate;
+    const computedTotal = Math.max(computedSubtotal - computedDiscount, 0);
+
+    const productIds = [...new Set(cleanedItems.map((item) => item.product_id))];
+    const stockPlaceholders = productIds.map(() => '?').join(',');
+
+    db.query(`SELECT product_id, stock FROM products WHERE product_id IN (${stockPlaceholders})`, productIds, (stockErr, stockRows) => {
+        if (stockErr) return res.status(500).json({ message: 'Database error' });
+
+        const stockMap = new Map((stockRows || []).map((row) => [Number(row.product_id), Number(row.stock || 0)]));
+        for (const item of cleanedItems) {
+            const availableStock = stockMap.get(item.product_id);
+            if (availableStock === undefined) {
+                return res.status(400).json({ message: `Product #${item.product_id} not found` });
+            }
+            if (item.quantity > availableStock) {
+                return res.status(400).json({ message: `Insufficient stock for product #${item.product_id}` });
+            }
+        }
+
+        // Get worker name
+        const workerSql = 'SELECT first_name, last_name FROM user_accounts WHERE user_id = ?';
+        db.query(workerSql, [userId], (workerErr, workerRows) => {
+            if (workerErr) return res.status(500).json({ message: 'Database error' });
+
+            const workerName = workerRows.length > 0 ? `${workerRows[0].first_name} ${workerRows[0].last_name}` : 'Staff';
+
+            // Create order without user_id (manual order)
+            const orderSql = `
+                INSERT INTO orders (customer_name, email, contact_number, total_amount, status, payment_method, paid_by_user_id, paid_by_name, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'completed', 'cash', ?, ?, NOW(), NOW())
+            `;
+
+            db.query(orderSql, [normalizedCustomer, email || null, contact_number || null, computedTotal, userId, workerName], (orderErr, orderResult) => {
+                if (orderErr) return res.status(500).json({ message: 'Failed to create manual order' });
+
+                const orderId = orderResult.insertId;
+                const unitDiscount = discountRate;
+
+                let processedItems = 0;
+                for (const item of cleanedItems) {
+                    const perUnitDiscountValue = Number((item.price * unitDiscount).toFixed(2));
+
+                    db.query(
+                        'INSERT INTO order_items (order_id, product_id, quantity, price, unit_discount) VALUES (?, ?, ?, ?, ?)',
+                        [orderId, item.product_id, item.quantity, item.price, perUnitDiscountValue],
+                        (itemErr) => {
+                            if (itemErr) return res.status(500).json({ message: 'Failed to save manual order items' });
+
+                            db.query('UPDATE products SET stock = stock - ? WHERE product_id = ?', [item.quantity, item.product_id], (stockUpdateErr) => {
+                                if (stockUpdateErr) return res.status(500).json({ message: 'Failed to update product stock' });
+
+                                processedItems += 1;
+                                if (processedItems !== cleanedItems.length) return;
+
+                                // Generate invoice
+                                const invoiceSql = `
+                                    INSERT INTO invoices (order_id, invoice_number, customer_name, email, contact_number, total_amount, issued_by_user_id, issued_by_name, status, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'issued', NOW())
+                                `;
+
+                                const invoiceNumber = `INV-${Date.now()}`;
+                                db.query(invoiceSql, [orderId, invoiceNumber, normalizedCustomer, email || null, contact_number || null, computedTotal, userId, workerName], (invoiceErr) => {
+                                    if (invoiceErr) return res.status(500).json({ message: 'Order created but failed to generate invoice' });
+
+                                    // Log transaction
+                                    const logSql = `
+                                        INSERT INTO transaction_logs (order_id, transaction_type, customer_name, amount, description, processed_by_user_id, processed_by_name, created_at)
+                                        VALUES (?, 'payment', ?, ?, ?, ?, ?, NOW())
+                                    `;
+
+                                    const itemSummary = cleanedItems
+                                        .map((item) => `${item.product_name || `#${item.product_id}`} x${item.quantity}`)
+                                        .join(', ')
+                                        .slice(0, 220);
+
+                                    const description = `Manual walk-in order | Items: ${itemSummary} | Subtotal: ₱${computedSubtotal.toFixed(2)} | Discount: ${normalizedDiscountType.toUpperCase()} -₱${computedDiscount.toFixed(2)} | Total: ₱${computedTotal.toFixed(2)}`.slice(0, 500);
+
+                                    db.query(logSql, [orderId, normalizedCustomer, computedTotal, description, userId, workerName], (logErr) => {
+                                        if (logErr) return res.status(500).json({ message: 'Order and invoice created but failed to log transaction' });
+
+                                        // Record cash entry
+                                        const entrySql = `
+                                            INSERT INTO cash_register_entries (user_id, entry_type, amount, description)
+                                            VALUES (?, 'cash', ?, ?)
+                                        `;
+
+                                        const entryDesc = `Walk-in customer: ${normalizedCustomer} | Total: ₱${computedTotal.toFixed(2)} | Discount: ${normalizedDiscountType.toUpperCase()}`.slice(0, 500);
+                                        db.query(entrySql, [userId, computedTotal, entryDesc], (entryErr) => {
+                                            if (entryErr) return res.status(500).json({ message: 'Order created but failed to record cash entry' });
+                                            res.json({
+                                                message: 'Walk-in order created and marked as paid successfully',
+                                                orderId,
+                                                invoiceNumber,
+                                                totals: {
+                                                    subtotal: Number(subtotal || computedSubtotal),
+                                                    discount: Number(discount_amount || computedDiscount),
+                                                    total: Number(total_amount || computedTotal)
+                                                }
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        }
+                    );
+                }
+            });
+        });
+    });
+});
+
+app.get('/api/worker/cash-register/order/:orderId/details', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+
+    const orderSql = `
+        SELECT o.order_id, o.user_id, o.status, o.created_at, o.payment_method, o.total_amount,
+               u.first_name, u.last_name, u.email, u.contact_number,
+               u.is_senior, u.is_pwd, u.senior_verified, u.pwd_verified,
+               i.invoice_number
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON i.order_id = o.order_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    const itemsSql = `
+        SELECT oi.order_item_id, oi.product_id, oi.quantity, oi.price, oi.unit_discount, p.name
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.order_item_id ASC
+    `;
+
+    db.query(orderSql, [orderId], (orderErr, orderRows) => {
+        if (orderErr) return res.status(500).json({ message: 'Database error' });
+        if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const order = orderRows[0];
+
+        db.query(itemsSql, [orderId], (itemsErr, itemsRows) => {
+            if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+            const items = (itemsRows || []).map((item) => {
+                const quantity = Number(item.quantity || 0);
+                const price = Number(item.price || 0);
+                const unitDiscount = Number(item.unit_discount || 0);
+                const lineSubtotal = quantity * price;
+                const lineDiscount = quantity * unitDiscount;
+                const lineTotal = lineSubtotal - lineDiscount;
+
+                return {
+                    order_item_id: item.order_item_id,
+                    product_id: item.product_id,
+                    product_name: item.name,
+                    quantity,
+                    price,
+                    unit_discount: unitDiscount,
+                    line_subtotal: lineSubtotal,
+                    line_discount: lineDiscount,
+                    line_total: lineTotal
+                };
+            });
+
+            const subtotal = items.reduce((sum, item) => sum + item.line_subtotal, 0);
+            const discount = items.reduce((sum, item) => sum + item.line_discount, 0);
+            const total = items.reduce((sum, item) => sum + item.line_total, 0);
+            const hasVerifiedDiscount = (order.is_senior && order.senior_verified) || (order.is_pwd && order.pwd_verified);
+
+            res.json({
+                order: {
+                    order_id: order.order_id,
+                    status: order.status,
+                    created_at: order.created_at,
+                    payment_method: order.payment_method,
+                    total_amount: Number(order.total_amount || total),
+                    invoice_number: order.invoice_number || null,
+                    customer_name: `${order.first_name || ''} ${order.last_name || ''}`.trim(),
+                    email: order.email,
+                    contact_number: order.contact_number
+                },
+                items,
+                summary: {
+                    subtotal,
+                    discount,
+                    total: Number(order.total_amount || total),
+                    has_verified_discount: Boolean(hasVerifiedDiscount)
+                }
+            });
+        });
+    });
+});
+
+app.put('/api/worker/cash-register/reconcile', checkRole(['admin', 'worker']), (req, res) => {
+    const { actualCash, userId } = req.body;
+
+    if (actualCash === undefined || !userId) {
+        return res.status(400).json({ message: 'Actual cash and userId are required' });
+    }
+
+    const sql = 'INSERT INTO cash_register_reconciliations (user_id, actual_cash) VALUES (?, ?)';
+    db.query(sql, [userId, actualCash], (err) => {
+        if (err) return res.status(500).json({ message: 'Failed to update reconciliation' });
+        res.json({ message: 'Cash reconciliation updated successfully' });
+    });
+});
+
+// --- 27D. WORKER/ADMIN TRANSACTION LOG ---
+app.get('/api/worker/transaction-log', checkRole(['admin', 'worker']), (req, res) => {
+    const isAdmin = req.userRole === 'admin';
+    const roleFilter = isAdmin ? '' : "WHERE role_name = 'customer'";
+
+    const sql = `
+        SELECT * FROM (
+            SELECT
+                CONCAT('order-', o.order_id) AS transaction_id,
+                'order' AS transaction_type,
+                o.order_id,
+                o.total_amount AS amount,
+                o.created_at AS timestamp,
+                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+                CONCAT('Order placed for ₱', FORMAT(o.total_amount, 2)) AS description
+            FROM orders o
+            JOIN user_accounts u ON o.user_id = u.user_id
+            JOIN roles r ON u.role_id = r.role_id
+            ${roleFilter}
+
+            UNION ALL
+
+            SELECT
+                CONCAT('invoice-', i.invoice_id) AS transaction_id,
+                'invoice' AS transaction_type,
+                o.order_id,
+                o.total_amount AS amount,
+                i.created_at AS timestamp,
+                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+                CONCAT(
+                    'Invoice generated: ',
+                    i.invoice_number,
+                    ' | Prepared by: ',
+                    COALESCE(i.issued_by_name, 'Not recorded')
+                ) AS description
+            FROM invoices i
+            JOIN orders o ON i.order_id = o.order_id
+            JOIN user_accounts u ON o.user_id = u.user_id
+            JOIN roles r ON u.role_id = r.role_id
+            ${roleFilter}
+
+            UNION ALL
+
+            SELECT
+                CONCAT('payment-', o.order_id, '-', UNIX_TIMESTAMP(o.updated_at)) AS transaction_id,
+                'payment' AS transaction_type,
+                o.order_id,
+                o.total_amount AS amount,
+                o.updated_at AS timestamp,
+                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+                CONCAT(
+                    'Payment confirmed',
+                    IF(i.invoice_number IS NOT NULL, CONCAT(' for ', i.invoice_number), ''),
+                    ' via ',
+                    COALESCE(o.payment_method, 'unknown'),
+                    ' | Confirmed by: ',
+                    COALESCE(o.paid_by_name, 'Not recorded')
+                ) AS description
+            FROM orders o
+            JOIN user_accounts u ON o.user_id = u.user_id
+            LEFT JOIN invoices i ON i.order_id = o.order_id
+            JOIN roles r ON u.role_id = r.role_id
+            WHERE o.status = 'completed'
+            ${isAdmin ? '' : "AND role_name = 'customer'"}
+
+            UNION ALL
+
+            SELECT
+                CONCAT('email-', ir.request_id) AS transaction_id,
+                'email' AS transaction_type,
+                o.order_id,
+                o.total_amount AS amount,
+                ir.request_time AS timestamp,
+                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+                CONCAT(
+                    'Invoice email sent',
+                    ' | Sent by: ',
+                    COALESCE(CONCAT(sender.first_name, ' ', sender.last_name), 'System')
+                ) AS description
+            FROM invoice_requests ir
+            JOIN invoices i ON ir.invoice_id = i.invoice_id
+            JOIN orders o ON i.order_id = o.order_id
+            JOIN user_accounts u ON o.user_id = u.user_id
+            LEFT JOIN user_accounts sender ON sender.user_id = ir.requested_by
+            JOIN roles r ON u.role_id = r.role_id
+            ${roleFilter}
+
+            UNION ALL
+
+            SELECT
+                CONCAT('review-', pr.review_id) AS transaction_id,
+                'review' AS transaction_type,
+                NULL AS order_id,
+                0 AS amount,
+                pr.created_at AS timestamp,
+                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
+                CONCAT('Review submitted for product #', pr.product_id) AS description
+            FROM product_reviews pr
+            JOIN user_accounts u ON pr.user_id = u.user_id
+            JOIN roles r ON u.role_id = r.role_id
+            ${roleFilter}
+        ) AS logs
+        ORDER BY timestamp DESC
+        LIMIT 500`;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        res.json(results.map(row => ({
+            transaction_id: row.transaction_id,
+            transaction_type: row.transaction_type,
+            order_id: row.order_id,
+            amount: row.amount,
+            timestamp: row.timestamp,
+            customer_name: row.customer_name,
+            description: row.description
+        })));
+    });
+});
+
+// --- 27E. WORKER/ADMIN REVIEW LIST ---
+app.get('/api/worker/reviews', checkRole(['admin', 'worker']), (req, res) => {
+    const sql = `SELECT pr.review_id, pr.product_id, pr.user_id, pr.rating, pr.review_text, pr.created_at,
+                        p.name AS product_name,
+                        u.first_name, u.last_name, u.email
+                 FROM product_reviews pr
+                 JOIN products p ON pr.product_id = p.product_id
+                 JOIN user_accounts u ON pr.user_id = u.user_id
+                 ORDER BY pr.created_at DESC`;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+
+        const reviews = results.map(row => ({
+            review_id: row.review_id,
+            product_id: row.product_id,
+            product_name: row.product_name,
+            user_id: row.user_id,
+            customer_name: `${row.first_name || ''} ${row.last_name || ''}`.trim(),
+            email: row.email,
+            rating: row.rating,
+            review_text: row.review_text,
+            created_at: row.created_at,
+            review_date: row.created_at
+        }));
+
+        res.json({ reviews });
+    });
+});
 
 // Function to generate receipt HTML
 function generateReceiptHtml(order, items, userName) {
@@ -1175,6 +2697,78 @@ app.get('/api/admin/orders', checkRole('admin'), (req, res) => {
     });
 });
 
+// --- 24A. GET USER LOGS (Admin Only) ---
+app.get('/api/admin/user-logs', checkRole('admin'), (req, res) => {
+    const sql = `
+        SELECT
+            u.user_id,
+            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS full_name,
+            u.email,
+            r.role_name,
+            l.login_at,
+            l.logout_at,
+            l.login_success,
+            l.ip_address,
+            l.user_agent,
+            l.session_token
+        FROM user_session_logs l
+        JOIN user_accounts u ON l.user_id = u.user_id
+        JOIN roles r ON u.role_id = r.role_id
+        WHERE COALESCE(u.is_deleted, 0) = 0
+        ORDER BY l.login_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ logs: results });
+    });
+});
+
+// --- 24B. GET ORDER LOGS (Admin Only) ---
+app.get('/api/admin/order-logs', checkRole('admin'), (req, res) => {
+    const sql = `
+        SELECT
+            o.order_id,
+            o.user_id,
+            CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS customer_name,
+            u.email AS customer_email,
+            r.role_name,
+            o.total_amount,
+            CASE
+                WHEN o.status = 'cancelled' OR o.cancellation_status = 'approved' THEN 'Cancelled'
+                ELSE 'Paid'
+            END AS final_status,
+            o.created_at AS order_created_at,
+            o.updated_at AS order_updated_at,
+            COUNT(oi.order_item_id) AS items_count
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        JOIN roles r ON u.role_id = r.role_id
+        LEFT JOIN order_items oi ON oi.order_id = o.order_id
+        WHERE (
+            o.status IN ('completed', 'delivered', 'cancelled')
+            OR o.cancellation_status = 'approved'
+        )
+        GROUP BY
+            o.order_id,
+            o.user_id,
+            u.first_name,
+            u.last_name,
+            u.email,
+            r.role_name,
+            o.total_amount,
+            final_status,
+            o.created_at,
+            o.updated_at
+        ORDER BY o.updated_at DESC, o.created_at DESC
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ logs: results });
+    });
+});
+
 // --- 32. REQUEST ORDER CANCELLATION ---
 app.post('/api/orders/:orderId/cancel', (req, res) => {
     const { orderId } = req.params;
@@ -1350,7 +2944,7 @@ app.get('/api/admin/low-stock', checkRole(['admin', 'worker']), (req, res) => {
 });
 
 // --- 36. UPDATE PRODUCT STOCK ---
-app.put('/api/products/:id/stock', checkRole('admin'), (req, res) => {
+app.put('/api/products/:id/stock', checkRole(['admin', 'worker']), (req, res) => {
     const { id } = req.params;
     const { stock, lowStockThreshold } = req.body;
 

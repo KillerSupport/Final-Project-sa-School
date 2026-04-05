@@ -22,6 +22,12 @@ const Login = () => {
             
             // Store user data in localStorage
             localStorage.setItem('user', JSON.stringify(res.data.user));
+            if (res.data.sessionLogId) {
+                localStorage.setItem('sessionLogId', String(res.data.sessionLogId));
+            }
+            if (res.data.sessionToken) {
+                localStorage.setItem('sessionToken', res.data.sessionToken);
+            }
             
             Swal.fire({
                 title: 'Welcome Back!',
@@ -32,8 +38,13 @@ const Login = () => {
             });
 
             const roleName = (res.data?.user?.role_name || '').toLowerCase();
+            const legacyRole = (res.data?.user?.legacy_role || '').toLowerCase();
+            const workerRoleAliases = new Set(['worker', 'moderator', 'cashier']);
+
             if (roleName === 'admin') {
                 navigate('/admin-dashboard');
+            } else if (workerRoleAliases.has(roleName) || workerRoleAliases.has(legacyRole)) {
+                navigate('/worker-dashboard');
             } else {
                 navigate('/catalog');
             }

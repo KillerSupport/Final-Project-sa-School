@@ -46,9 +46,15 @@ const ProductCatalog = () => {
 
     const handleLogout = async () => {
         try {
-            await axios.post('http://localhost:5000/api/logout');
+            await axios.post('http://localhost:5000/api/logout', {
+                userId,
+                sessionLogId: localStorage.getItem('sessionLogId'),
+                sessionToken: localStorage.getItem('sessionToken')
+            });
         } catch {}
         localStorage.removeItem('user');
+        localStorage.removeItem('sessionLogId');
+        localStorage.removeItem('sessionToken');
         navigate('/');
     };
 

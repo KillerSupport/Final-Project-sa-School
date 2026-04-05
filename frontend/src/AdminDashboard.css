@@ -456,30 +456,40 @@
 /* Tab Navigation */
 .tabs-container {
     display: flex;
+    flex-wrap: nowrap;
     gap: 10px;
     margin-bottom: 30px;
-    padding: 0 10px;
+    padding: 6px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow-x: auto;
 }
 
-.tab-button {
-    padding: 12px 24px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
+.tabs-container .tab-button {
+    padding: 10px 18px;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #111827;
     border-radius: 8px;
     cursor: pointer;
     font-weight: 600;
     font-size: 16px;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    white-space: nowrap;
+    flex: 1 1 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.tab-button-with-badge {
+.tabs-container .tab-button-with-badge {
     position: relative;
     padding-right: 34px;
 }
 
-.tab-alert-badge {
+.tabs-container .tab-alert-badge {
     position: absolute;
     top: -10px;
     right: -10px;
@@ -499,15 +509,17 @@
     line-height: 1;
 }
 
-.tab-button:hover {
-    border-color: rgba(255, 255, 255, 0.5);
-    background: rgba(255, 255, 255, 0.2);
+.tabs-container .tab-button:hover {
+    border-color: #9ca3af;
+    background: #f3f4f6;
+    color: #111827;
 }
 
-.tab-button.active {
-    background: white;
-    color: #667eea;
-    border-color: white;
+.tabs-container .tab-button.active {
+    background: #e5e7eb;
+    color: #1e3a8a;
+    border-color: #4f46e5;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16), inset 0 -3px 0 #4338ca;
 }
 
 /* Admin Content */
@@ -543,9 +555,18 @@
 
 .products-filter-bar {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 10px;
     flex-wrap: wrap;
+    margin-top: 0;
+}
+
+.products-header-actions .products-search-input,
+.products-header-actions .products-sort-select,
+.products-header-actions .btn-primary,
+.products-header-actions .products-view-tabs {
+    height: 42px;
+    box-sizing: border-box;
 }
 
 .products-search-input,
@@ -580,7 +601,7 @@
     display: inline-flex;
     align-items: center;
     gap: 0;
-    padding: 4px;
+    padding: 3px;
     border: 1px solid #cbd5e1;
     border-radius: 14px;
     background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
@@ -593,11 +614,15 @@
     color: #4b5563;
     font-size: 13px;
     font-weight: 700;
-    padding: 9px 14px;
+    height: 100%;
+    padding: 0 14px;
     border-radius: 10px;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .products-view-tab:hover {
@@ -618,6 +643,8 @@
 .products-header-actions .btn-primary {
     min-width: 132px;
     justify-content: center;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 .btn-primary {
@@ -1026,11 +1053,11 @@
     }
 
     .tabs-container {
-        padding: 0;
+        padding: 6px;
     }
 
-    .tab-button {
-        flex: 1;
+    .tabs-container .tab-button {
+        flex: 0 0 auto;
         text-align: center;
     }
 }
@@ -1051,8 +1078,8 @@
     }
 
     .tabs-container {
-        flex-direction: column;
-        gap: 8px;
+        flex-direction: row;
+        gap: 6px;
     }
 
     .admin-content {
@@ -1138,6 +1165,49 @@
 
 .orders-table tbody tr:hover {
     background: #f8fafc;
+}
+
+.logs-table-container {
+    margin-top: 10px;
+    overflow-x: auto;
+}
+
+.logs-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+}
+
+.logs-table thead {
+    background: #f8fafc;
+}
+
+.logs-table th {
+    padding: 14px;
+    text-align: left;
+    font-weight: 700;
+    color: #374151;
+    font-size: 12px;
+    text-transform: uppercase;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+}
+
+.logs-table td {
+    padding: 14px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+    white-space: nowrap;
+}
+
+.logs-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.logs-empty {
+    padding: 24px 0;
+    text-align: center;
+    color: #555;
 }
 
 .customer-info {

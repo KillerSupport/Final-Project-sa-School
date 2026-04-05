@@ -12,6 +12,7 @@ import Cart from './Cart';
 import Checkout from './Checkout';
 import OrderHistory from './OrderHistory';
 import AdminDashboard from './AdminDashboard';
+import WorkerDashboard from './WorkerDashboard';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/order-history" element={<OrderHistory />} />
                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
+                <Route path="/worker-dashboard" element={<WorkerDashboard />} />
             </Routes>
         </Router>
     </React.StrictMode>

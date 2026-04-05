@@ -24,6 +24,12 @@ const AdminDashboard = () => {
     const [deletedProductSortOrder, setDeletedProductSortOrder] = useState('a-z');
     const [lowStockSearch, setLowStockSearch] = useState('');
     const [orders, setOrders] = useState([]);
+    const [userLogs, setUserLogs] = useState([]);
+    const [orderLogs, setOrderLogs] = useState([]);
+    const [userLogSearch, setUserLogSearch] = useState('');
+    const [orderLogSearch, setOrderLogSearch] = useState('');
+    const [orderLogStatusFilter, setOrderLogStatusFilter] = useState('all');
+    const [logsLoading, setLogsLoading] = useState(false);
     const [lowStockProducts, setLowStockProducts] = useState([]);
     const [cancellationRequests, setCancellationRequests] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -94,9 +100,20 @@ const AdminDashboard = () => {
     const [websiteBgUrl, setWebsiteBgUrl] = useState('');
     const [websiteBgLoading, setWebsiteBgLoading] = useState(false);
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try {
+            await axios.post('http://localhost:5000/api/logout', {
+                userId,
+                sessionLogId: localStorage.getItem('sessionLogId'),
+                sessionToken: localStorage.getItem('sessionToken')
+            });
+        } catch (error) {
+            console.error('Logout log error:', error);
+        }
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        localStorage.removeItem('sessionLogId');
+        localStorage.removeItem('sessionToken');
         navigate('/');
     };
 
@@ -210,6 +227,36 @@ const AdminDashboard = () => {
         }
     };
 
+    const fetchUserLogs = async () => {
+        setLogsLoading(true);
+        try {
+            const response = await axios.get('http://localhost:5000/api/admin/user-logs', {
+                params: { userId }
+            });
+            setUserLogs(response.data?.logs || []);
+        } catch (error) {
+            setUserLogs([]);
+            Swal.fire('Error', 'Failed to fetch user logs', 'error');
+        } finally {
+            setLogsLoading(false);
+        }
+    };
+
+    const fetchOrderLogs = async () => {
+        setLogsLoading(true);
+        try {
+            const response = await axios.get('http://localhost:5000/api/admin/order-logs', {
+                params: { userId }
+            });
+            setOrderLogs(response.data?.logs || []);
+        } catch (error) {
+            setOrderLogs([]);
+            Swal.fire('Error', 'Failed to fetch order logs', 'error');
+        } finally {
+            setLogsLoading(false);
+        }
+    };
+
     const fetchLowStockProducts = async () => {
         try {
             const response = await axios.get('http://localhost:5000/api/products');
@@ -258,6 +305,71 @@ const AdminDashboard = () => {
             return String(left.name || '').localeCompare(String(right.name || ''));
         });
     }, [lowStockProducts, lowStockSearch]);
+
+    const visibleUserLogs = useMemo(() => {
+        const searchTerm = userLogSearch.trim().toLowerCase();
+
+        if (!searchTerm) {
+            return userLogs;
+        }
+
+        return (userLogs || []).filter((log) => {
+            const loginAt = log.login_at ? new Date(log.login_at) : null;
+            const logoutAt = log.logout_at ? new Date(log.logout_at) : null;
+
+            const searchable = [
+                String(log.full_name || ''),
+                String(log.email || ''),
+                String(log.role_name || ''),
+                loginAt ? loginAt.toLocaleDateString() : '',
+                loginAt ? loginAt.toLocaleTimeString() : '',
+                loginAt ? loginAt.toLocaleString() : '',
+                logoutAt ? logoutAt.toLocaleDateString() : '',
+                logoutAt ? logoutAt.toLocaleTimeString() : '',
+                logoutAt ? logoutAt.toLocaleString() : '',
+                loginAt ? loginAt.toISOString() : '',
+                logoutAt ? logoutAt.toISOString() : ''
+            ].join(' ').toLowerCase();
+
+            return searchable.includes(searchTerm);
+        });
+    }, [userLogs, userLogSearch]);
+
+    const visibleOrderLogs = useMemo(() => {
+        const searchTerm = orderLogSearch.trim().toLowerCase();
+
+        return (orderLogs || []).filter((log) => {
+            const status = String(log.final_status || 'Paid').toLowerCase();
+            if (orderLogStatusFilter !== 'all' && status !== orderLogStatusFilter) {
+                return false;
+            }
+
+            if (!searchTerm) {
+                return true;
+            }
+
+            const createdAt = log.order_created_at ? new Date(log.order_created_at) : null;
+            const updatedAt = log.order_updated_at ? new Date(log.order_updated_at) : null;
+
+            const searchable = [
+                String(log.order_id || ''),
+                String(log.customer_name || ''),
+                String(log.customer_email || ''),
+                String(log.role_name || ''),
+                String(log.final_status || 'Paid'),
+                createdAt ? createdAt.toLocaleDateString() : '',
+                createdAt ? createdAt.toLocaleTimeString() : '',
+                createdAt ? createdAt.toLocaleString() : '',
+                updatedAt ? updatedAt.toLocaleDateString() : '',
+                updatedAt ? updatedAt.toLocaleTimeString() : '',
+                updatedAt ? updatedAt.toLocaleString() : '',
+                createdAt ? createdAt.toISOString() : '',
+                updatedAt ? updatedAt.toISOString() : ''
+            ].join(' ').toLowerCase();
+
+            return searchable.includes(searchTerm);
+        });
+    }, [orderLogs, orderLogSearch, orderLogStatusFilter]);
 
     const openProfileModal = async () => {
         if (user && user.user_id) {
@@ -356,6 +468,10 @@ const AdminDashboard = () => {
             fetchLowStockProducts();
         } else if (activeTab === 'cancellations') {
             fetchCancellationRequests();
+        } else if (activeTab === 'user-logs') {
+            fetchUserLogs();
+        } else if (activeTab === 'order-logs') {
+            fetchOrderLogs();
         }
     }, [activeTab]);
 
@@ -678,6 +794,10 @@ const AdminDashboard = () => {
                             <button className="admin-header-icon-btn" onClick={openProfileModal} title="Profile">
                                 <User size={38} />
                                 <div className="admin-header-icon-label">Profile</div>
+                            </button>
+                            <button className="admin-header-icon-btn" onClick={() => navigate('/worker-dashboard')} title="Worker Tools">
+                                <Package size={38} />
+                                <div className="admin-header-icon-label">Worker Tools</div>
                             </button>
                             <button className="admin-header-icon-btn" onClick={handleLogout} title="Logout">
                                 <LogOut size={38} />
@@ -1064,8 +1184,65 @@ const AdminDashboard = () => {
                 <div className="admin-content">
                     <div className="section-header">
                         <h2>📝 User Logs</h2>
+                        <div className="products-filter-bar" style={{ marginTop: 12 }}>
+                            <input
+                                type="text"
+                                className="products-search-input"
+                                placeholder="Search user, role, login date/time, or logout date/time"
+                                value={userLogSearch}
+                                onChange={(e) => setUserLogSearch(e.target.value)}
+                            />
+                        </div>
                     </div>
-                    <div style={{padding: '24px 0', textAlign: 'center', color: '#555'}}>User activity logs will be shown here.</div>
+                    {logsLoading ? (
+                        <div className="logs-empty">Loading user logs...</div>
+                    ) : visibleUserLogs.length === 0 ? (
+                        <div className="logs-empty">No user logs found.</div>
+                    ) : (
+                        <div className="logs-table-container">
+                            <table className="logs-table">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Login Date</th>
+                                        <th>Login Time</th>
+                                        <th>Logout Date</th>
+                                        <th>Logout Time</th>
+                                        <th>Login Success</th>
+                                        <th>IP Address</th>
+                                        <th>User Agent</th>
+                                        <th>Session Token</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visibleUserLogs.map((log) => {
+                                        const loginAt = log.login_at ? new Date(log.login_at) : null;
+                                        const logoutAt = log.logout_at ? new Date(log.logout_at) : null;
+                                        return (
+                                            <tr key={`${log.user_id}-${log.login_at || ''}-${log.logout_at || ''}`}>
+                                                <td>
+                                                    <div className="customer-info">
+                                                        <div className="customer-name">{log.full_name || 'N/A'}</div>
+                                                        <div className="customer-email">{log.email}</div>
+                                                    </div>
+                                                </td>
+                                                <td>{String(log.role_name || '').toUpperCase()}</td>
+                                                <td>{loginAt ? loginAt.toLocaleDateString() : '-'}</td>
+                                                <td>{loginAt ? loginAt.toLocaleTimeString() : '-'}</td>
+                                                <td>{logoutAt ? logoutAt.toLocaleDateString() : '-'}</td>
+                                                <td>{logoutAt ? logoutAt.toLocaleTimeString() : 'Active Session'}</td>
+                                                <td>{Number(log.login_success) === 1 ? 'Yes' : 'No'}</td>
+                                                <td>{log.ip_address || '-'}</td>
+                                                <td title={log.user_agent || ''} style={{ maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{log.user_agent || '-'}</td>
+                                                <td title={log.session_token || ''} style={{ maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{log.session_token || '-'}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -1074,8 +1251,75 @@ const AdminDashboard = () => {
                 <div className="admin-content">
                     <div className="section-header">
                         <h2>📦 Order Logs</h2>
+                        <div className="products-filter-bar" style={{ marginTop: 12 }}>
+                            <input
+                                type="text"
+                                className="products-search-input"
+                                placeholder="Search user, role, order date/time, or status"
+                                value={orderLogSearch}
+                                onChange={(e) => setOrderLogSearch(e.target.value)}
+                            />
+                            <select
+                                className="products-sort-select"
+                                value={orderLogStatusFilter}
+                                onChange={(e) => setOrderLogStatusFilter(e.target.value)}
+                            >
+                                <option value="all">All Status</option>
+                                <option value="paid">Paid</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
                     </div>
-                    <div style={{padding: '24px 0', textAlign: 'center', color: '#555'}}>Order history logs will be shown here.</div>
+                    {logsLoading ? (
+                        <div className="logs-empty">Loading order logs...</div>
+                    ) : visibleOrderLogs.length === 0 ? (
+                        <div className="logs-empty">No order logs found.</div>
+                    ) : (
+                        <div className="logs-table-container">
+                            <table className="logs-table">
+                                <thead>
+                                    <tr>
+                                        <th>Order ID</th>
+                                        <th>Customer</th>
+                                        <th>Total</th>
+                                        <th>Status</th>
+                                        <th>Item Count</th>
+                                        <th>Created Date</th>
+                                        <th>Created Time</th>
+                                        <th>Updated Date</th>
+                                        <th>Updated Time</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visibleOrderLogs.map((log) => {
+                                        const createdAt = new Date(log.order_created_at);
+                                        const updatedAt = new Date(log.order_updated_at);
+                                        const finalStatus = String(log.final_status || 'Paid');
+                                        return (
+                                            <tr key={log.order_id}>
+                                                <td>#{log.order_id}</td>
+                                                <td>
+                                                    <div className="customer-info">
+                                                        <div className="customer-name">{log.customer_name}</div>
+                                                        <div className="customer-email">{log.customer_email}</div>
+                                                    </div>
+                                                </td>
+                                                <td>₱{Number(log.total_amount || 0).toFixed(2)}</td>
+                                                <td>
+                                                    <span className={`order-status ${String(finalStatus).toLowerCase()}`}>{finalStatus}</span>
+                                                </td>
+                                                <td>{Number(log.items_count || 0)}</td>
+                                                <td>{createdAt.toLocaleDateString()}</td>
+                                                <td>{createdAt.toLocaleTimeString()}</td>
+                                                <td>{updatedAt.toLocaleDateString()}</td>
+                                                <td>{updatedAt.toLocaleTimeString()}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
             {/* Orders Tab */}

@@ -26,8 +26,16 @@ const OrderHistory = () => {
 
     // --- LOGOUT HANDLER ---
     const handleLogout = async () => {
-        try { await axios.post('http://localhost:5000/api/logout'); } catch {}
+        try {
+            await axios.post('http://localhost:5000/api/logout', {
+                userId,
+                sessionLogId: localStorage.getItem('sessionLogId'),
+                sessionToken: localStorage.getItem('sessionToken')
+            });
+        } catch {}
         localStorage.removeItem('user');
+        localStorage.removeItem('sessionLogId');
+        localStorage.removeItem('sessionToken');
         navigate('/');
     };
 
@@ -489,6 +497,8 @@ const OrderHistory = () => {
 const OrderDetails = ({ orderId }) => {
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    const userId = user?.user_id;
 
     useEffect(() => {
         fetchOrderItems();
@@ -509,6 +519,11 @@ const OrderDetails = ({ orderId }) => {
         window.open(`http://localhost:5000/api/orders/${orderId}/receipt`, '_blank');
     };
 
+    const downloadInvoicePdf = () => {
+        if (!userId) return;
+        window.open(`http://localhost:5000/api/orders/${orderId}/invoice-pdf?userId=${userId}`, '_blank');
+    };
+
     if (loading) {
         return <div className="loading-details">Loading order details...</div>;
     }
@@ -522,6 +537,12 @@ const OrderDetails = ({ orderId }) => {
                     onClick={viewReceipt}
                 >
                     View Receipt
+                </button>
+                <button
+                    className="btn-view-receipt"
+                    onClick={downloadInvoicePdf}
+                >
+                    Download Invoice PDF
                 </button>
             </div>
             
