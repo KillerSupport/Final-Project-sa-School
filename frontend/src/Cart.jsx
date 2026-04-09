@@ -9,6 +9,7 @@ const Cart = () => {
     const [cartItems, setCartItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [userProfile, setUserProfile] = useState(null);
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const navigate = useNavigate();
     
     const user = JSON.parse(localStorage.getItem('user'));
@@ -21,7 +22,20 @@ const Cart = () => {
         }
         fetchCart();
         fetchUserProfile();
+        fetchBackground();
     }, [userId]);
+
+    const fetchBackground = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/background-settings');
+            const setting = Array.isArray(res.data)
+                ? res.data.find((item) => item.setting_name === 'client_background')
+                : null;
+            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+        } catch {
+            setBackgroundImageUrl('/isda_bg.png');
+        }
+    };
 
     const fetchUserProfile = async () => {
         try {
@@ -92,9 +106,9 @@ const Cart = () => {
     const discountAmount = calculateSubtotal() * discountRate;
     const discountedSubtotal = calculateSubtotal() - discountAmount;
 
-    const shippingFee = discountedSubtotal > 1000 ? 0 : 100;
+    const shippingFee = 0;
     const tax = discountedSubtotal * 0.05; // 5% tax
-    const total = discountedSubtotal + shippingFee + tax;
+    const total = discountedSubtotal + tax;
 
     const handleCheckout = () => {
         navigate('/checkout', { 
@@ -107,7 +121,10 @@ const Cart = () => {
     }
 
     return (
-        <div className="cart-container">
+        <div
+            className="cart-container"
+            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+        >
             <button 
                 className="back-button"
                 onClick={() => navigate('/catalog')}
@@ -134,130 +151,94 @@ const Cart = () => {
                     </button>
                 </div>
             ) : (
-                <div className="cart-content">
-                    <div className="cart-items">
-                        <div className="items-header">
+                <div className="cart-checkout-panel modern-cart-panel">
+                    <div className="cart-meta-row">
+                        <span>You have {cartItems.length} product{cartItems.length > 1 ? 's' : ''} in your cart</span>
+                        <span>In-store payment only</span>
+                    </div>
+
+                    <div className="cart-items modern-cart-items">
+                        <div className="items-header modern-items-header">
                             <span>Product</span>
                             <span>Price</span>
                             <span>Quantity</span>
-                            <span>Subtotal</span>
-                            <span></span>
+                            <span>Total</span>
                         </div>
 
                         {cartItems.map(item => (
-                            <div key={item.cart_id} className="cart-item">
-                                <div className="item-product">
+                            <div key={item.cart_id} className="cart-item modern-cart-item">
+                                <div className="item-product modern-item-product">
                                     <img src={item.image_url || 'https://via.placeholder.com/80'} alt={item.name} />
                                     <div className="product-info">
                                         <h4>{item.name}</h4>
-                                        <p>Available: {item.stock}</p>
+                                        <p>Category: {item.category || 'General'}</p>
+                                        <p>Price: ₱{Number(item.price).toFixed(2)}</p>
+                                        <p className="stock-note">● In Stock ({item.stock} Pcs)</p>
                                     </div>
+                                    <button
+                                        className="btn-remove compact-remove"
+                                        onClick={() => handleRemoveItem(item.cart_id)}
+                                        title="Remove item"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
 
-                                <div className="item-price">
-                                    <span className="currency">₱</span>
-                                    <span>{item.price}</span>
-                                </div>
+                                <div className="item-price modern-item-price">₱{Number(item.price).toFixed(2)}</div>
 
-                                <div className="item-quantity">
-                                    <button 
+                                <div className="item-quantity modern-item-quantity">
+                                    <button
                                         onClick={() => handleUpdateQuantity(item.cart_id, item.quantity - 1)}
                                         disabled={item.quantity <= 1}
                                     >
-                                        <Minus size={16} />
+                                        <Minus size={14} />
                                     </button>
-                                    <input 
+                                    <input
                                         type="number"
                                         value={item.quantity}
-                                        onChange={(e) => handleUpdateQuantity(item.cart_id, parseInt(e.target.value) || 1)}
+                                        onChange={(e) => handleUpdateQuantity(item.cart_id, parseInt(e.target.value, 10) || 1)}
                                         min="1"
                                         max={item.stock}
                                     />
-                                    <button 
+                                    <button
                                         onClick={() => handleUpdateQuantity(item.cart_id, item.quantity + 1)}
                                         disabled={item.quantity >= item.stock}
                                     >
-                                        <Plus size={16} />
+                                        <Plus size={14} />
                                     </button>
                                 </div>
 
-                                <div className="item-subtotal">
-                                    <span className="currency">₱</span>
-                                    <span>{(item.price * item.quantity).toFixed(2)}</span>
-                                </div>
-
-                                <button 
-                                    className="btn-remove"
-                                    onClick={() => handleRemoveItem(item.cart_id)}
-                                    title="Remove item"
-                                >
-                                    <Trash2 size={18} />
-                                </button>
+                                <div className="item-subtotal modern-item-total">₱{(item.price * item.quantity).toFixed(2)}</div>
                             </div>
                         ))}
                     </div>
 
-                    <div className="cart-summary">
-                        <h2>Order Summary</h2>
-                        
-                        <div className="summary-row">
-                            <span>Subtotal:</span>
-                            <span>₱{calculateSubtotal().toFixed(2)}</span>
+                    <div className="modern-cart-footer">
+                        <div className="modern-cart-totals">
+                            <div className="subtotal-main">Sub Total: ₱{discountedSubtotal.toFixed(2)}</div>
+                            <div className="subtotal-note">Excl. Tax</div>
+                            {discountRate > 0 && (
+                                <div className="footer-mini-note">Discount ({(discountRate * 100).toFixed(0)}%): -₱{discountAmount.toFixed(2)}</div>
+                            )}
+                            <div className="footer-mini-note">Tax (5%): ₱{tax.toFixed(2)}</div>
+                            <div className="footer-total">Total: ₱{total.toFixed(2)}</div>
                         </div>
 
-                        {discountRate > 0 && (
-                            <div className="summary-row discount">
-                                <span>Discount ({(discountRate * 100).toFixed(0)}%):</span>
-                                <span>-₱{discountAmount.toFixed(2)}</span>
-                            </div>
-                        )}
+                        <div className="modern-cart-actions">
+                            <button
+                                className="btn-continue modern-btn-continue"
+                                onClick={() => navigate('/catalog')}
+                            >
+                                Continue Shopping
+                            </button>
 
-                        <div className="summary-row">
-                            <span>Discounted Subtotal:</span>
-                            <span>₱{discountedSubtotal.toFixed(2)}</span>
+                            <button
+                                className="btn-checkout modern-btn-checkout"
+                                onClick={handleCheckout}
+                            >
+                                Go to Checkout
+                            </button>
                         </div>
-
-                        <div className="summary-row">
-                            <span>Tax (5%):</span>
-                            <span>₱{tax.toFixed(2)}</span>
-                        </div>
-
-                        <div className="summary-row total">
-                            <span>Total:</span>
-                            <span>₱{total.toFixed(2)}</span>
-                        </div>
-
-                        {userProfile && (userProfile.is_senior || userProfile.is_pwd) && (
-                            <div className="discount-message">
-                                ✓ {userProfile.is_senior ? 'Senior Citizen' : 'PWD'} discount applied!
-                            </div>
-                        )}
-
-                        {shippingFee === 0 && (
-                            <div className="shipping-message">
-                                ✓ Free shipping on this order!
-                            </div>
-                        )}
-
-                        {shippingFee > 0 && (
-                            <div className="shipping-message">
-                                Add ₱{(1000 - discountedSubtotal).toFixed(2)} more to get free shipping
-                            </div>
-                        )}
-
-                        <button 
-                            className="btn-checkout"
-                            onClick={handleCheckout}
-                        >
-                            Proceed to Checkout
-                        </button>
-
-                        <button 
-                            className="btn-continue"
-                            onClick={() => navigate('/catalog')}
-                        >
-                            Continue Shopping
-                        </button>
                     </div>
                 </div>
             )}

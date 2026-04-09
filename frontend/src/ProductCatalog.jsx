@@ -1,30 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { User, ShoppingCart, LogOut, Eye, EyeOff, X, Mic, MicOff } from 'lucide-react';
 import './ProductCatalog.css';
 
 const ProductCatalog = () => {
     const [products, setProducts] = useState([]);
-    const [categories, setCategories] = useState([]);
     const [search, setSearch] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('');
-    const [minPrice, setMinPrice] = useState('');
-    const [maxPrice, setMaxPrice] = useState('');
-    const [sortBy, setSortBy] = useState('name');
     const [sortOrder, setSortOrder] = useState('ASC');
-    const [inStockOnly, setInStockOnly] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
+    const [speechSupported, setSpeechSupported] = useState(false);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef(null);
 
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileLoading, setProfileLoading] = useState(false);
     const [passwordLoading, setPasswordLoading] = useState(false);
+    const [showOldPassword, setShowOldPassword] = useState(false);
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const navigate = useNavigate();
 
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userId = user?.user_id || null;
     const userRole = user?.role_name || null;
+    const isAdmin = String(userRole || '').toLowerCase() === 'admin';
+    const isClientLike = ['client', 'customer'].includes(String(userRole || '').toLowerCase());
+    const displayName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Client';
+    const profileImageStorageKey = userId ? `clientProfileImage:${userId}` : 'clientProfileImage';
+    const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
+    const [profileImageFile, setProfileImageFile] = useState(null);
 
     const [profileEdit, setProfileEdit] = useState({
         first_name: '',
@@ -44,6 +52,28 @@ const ProductCatalog = () => {
         confirmPassword: ''
     });
 
+    const normalizeSearchInput = (value) => String(value || '')
+        .replace(/\s+/g, ' ')
+        .replace(/[.,!?;:。]+$/g, '')
+        .trim();
+
+    useEffect(() => {
+        const fetchBackground = async () => {
+            try {
+                const res = await axios.get('http://localhost:5000/api/background-settings');
+                const setting = Array.isArray(res.data)
+                    ? res.data.find((item) => item.setting_name === 'client_background')
+                    : null;
+
+                setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+            } catch {
+                setBackgroundImageUrl('/isda_bg.png');
+            }
+        };
+
+        fetchBackground();
+    }, []);
+
     const handleLogout = async () => {
         try {
             await axios.post('http://localhost:5000/api/logout', {
@@ -59,38 +89,49 @@ const ProductCatalog = () => {
     };
 
     useEffect(() => {
-        fetchCategories();
         fetchProducts();
     }, []);
 
     useEffect(() => {
-        fetchProducts();
-    }, [search, selectedCategory, minPrice, maxPrice, sortBy, sortOrder, inStockOnly]);
-
-    const fetchCategories = async () => {
-        try {
-            const res = await axios.get('http://localhost:5000/api/categories');
-            setCategories(res.data);
-        } catch (err) {
-            console.error(err);
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            setSpeechSupported(false);
+            return;
         }
-    };
+
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = () => setIsListening(false);
+        recognition.onresult = (event) => {
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                transcript += event.results[i][0].transcript;
+            }
+            setSearch(normalizeSearchInput(transcript));
+        };
+
+        recognitionRef.current = recognition;
+        setSpeechSupported(true);
+
+        return () => {
+            try {
+                recognition.stop();
+            } catch {}
+        };
+    }, []);
 
     const fetchProducts = async () => {
         setLoading(true);
         try {
-            const params = {
-                search,
-                category: selectedCategory,
-                minPrice,
-                maxPrice,
-                sortBy,
-                sortOrder,
-                inStock: inStockOnly ? 'true' : undefined
-            };
-
-            const res = await axios.get('http://localhost:5000/api/products/search', { params });
-            setProducts(res.data || []);
+            const res = await axios.get('http://localhost:5000/api/products', {
+                params: { includeDeleted: true }
+            });
+            setProducts(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
             console.error(err);
             setProducts([]);
@@ -99,6 +140,43 @@ const ProductCatalog = () => {
         }
     };
 
+    const isProductDeleted = (product) => {
+        const normalized = String(product?.is_deleted ?? '').toLowerCase();
+        return normalized === '1' || normalized === 'true';
+    };
+
+    const visibleProducts = useMemo(() => {
+        const searchTerm = normalizeSearchInput(search).toLowerCase();
+        const filtered = (products || []).filter((product) => {
+            const name = String(product.name || '').toLowerCase();
+            const category = String(product.category || '').toLowerCase();
+            const isDeleted = isProductDeleted(product);
+            const isOutOfStock = Number(product.stock || 0) <= 0;
+            const isUnavailable = isDeleted || isOutOfStock;
+
+            // Default dashboard view hides unavailable products.
+            if (!searchTerm) {
+                return !isUnavailable;
+            }
+
+            const matchesName = name.includes(searchTerm);
+            const matchesCategory = category.includes(searchTerm);
+
+            // Unavailable products only appear when searched by product name.
+            if (isUnavailable) {
+                return matchesName;
+            }
+
+            return matchesName || matchesCategory;
+        });
+
+        return [...filtered].sort((left, right) => {
+            const a = String(left.name || '').toLowerCase();
+            const b = String(right.name || '').toLowerCase();
+            return sortOrder === 'DESC' ? b.localeCompare(a) : a.localeCompare(b);
+        });
+    }, [products, search, sortOrder]);
+
     const handleAddToCart = async (product) => {
         if (!userId) {
             Swal.fire('Login Required', 'Please login first', 'warning');
@@ -106,8 +184,40 @@ const ProductCatalog = () => {
             return;
         }
 
-        if (product.is_deleted || Number(product.stock || 0) <= 0) {
+        if (isProductDeleted(product) || Number(product.stock || 0) <= 0) {
             Swal.fire('Unavailable', 'This product is not available for purchase.', 'info');
+            return;
+        }
+
+        const { value: quantityValue } = await Swal.fire({
+            title: `Add ${product.name} to cart`,
+            input: 'number',
+            inputLabel: `Enter quantity (max ${product.stock})`,
+            inputValue: 1,
+            inputAttributes: {
+                min: '1',
+                max: String(product.stock),
+                step: '1'
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Add to Cart',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#0ea5a8',
+            preConfirm: (value) => {
+                const parsed = Number(value);
+                if (!Number.isFinite(parsed) || parsed < 1) {
+                    Swal.showValidationMessage('Quantity must be at least 1');
+                    return null;
+                }
+                if (parsed > Number(product.stock || 0)) {
+                    Swal.showValidationMessage(`Only ${product.stock} available`);
+                    return null;
+                }
+                return parsed;
+            }
+        });
+
+        if (!quantityValue) {
             return;
         }
 
@@ -115,10 +225,10 @@ const ProductCatalog = () => {
             await axios.post('http://localhost:5000/api/cart', {
                 userId,
                 productId: product.product_id,
-                quantity: 1
+                quantity: Number(quantityValue)
             });
 
-            Swal.fire('Success', `${product.name} added to cart`, 'success');
+            Swal.fire('Success', `${product.name} x${quantityValue} added to cart`, 'success');
         } catch {
             Swal.fire('Error', 'Failed to add to cart', 'error');
         }
@@ -132,7 +242,18 @@ const ProductCatalog = () => {
 
         try {
             const res = await axios.get(`http://localhost:5000/api/user-profile/${userId}`);
-            setProfileEdit(res.data || {});
+            setProfileEdit({
+                first_name: res.data.first_name || '',
+                middle_name: res.data.middle_name || '',
+                last_name: res.data.last_name || '',
+                suffix: res.data.suffix || '',
+                birthday: res.data.birthday || '',
+                gender: res.data.gender || '',
+                contact_number: res.data.contact_number || '',
+                address: res.data.address || '',
+                email: res.data.email || ''
+            });
+            setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
         } catch {
             Swal.fire('Error', 'Failed to load profile', 'error');
             setShowProfileModal(false);
@@ -151,13 +272,60 @@ const ProductCatalog = () => {
         setProfileLoading(true);
 
         try {
-            await axios.put(`http://localhost:5000/api/account/${userId}`, profileEdit);
-            Swal.fire('Success', 'Profile updated', 'success');
+            let uploadedImageUrl = profileImagePreview;
+
+            if (profileImageFile) {
+                const formData = new FormData();
+                formData.append('image', profileImageFile);
+                const uploadRes = await axios.post('http://localhost:5000/api/upload-image', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                uploadedImageUrl = uploadRes.data.imageUrl;
+            }
+
+            await axios.put(`http://localhost:5000/api/account/${userId}`, {
+                first_name: profileEdit.first_name,
+                last_name: profileEdit.last_name,
+                email: profileEdit.email,
+                id_image_url: uploadedImageUrl
+            });
+
+            if (passwordEdit.oldPassword || passwordEdit.newPassword || passwordEdit.confirmPassword) {
+                if (!passwordEdit.oldPassword || !passwordEdit.newPassword || !passwordEdit.confirmPassword) {
+                    throw new Error('Please complete all password fields.');
+                }
+
+                if (passwordEdit.newPassword !== passwordEdit.confirmPassword) {
+                    throw new Error('New passwords do not match');
+                }
+
+                setPasswordLoading(true);
+                await axios.put(`http://localhost:5000/api/account/${userId}/password`, {
+                    oldPassword: passwordEdit.oldPassword,
+                    newPassword: passwordEdit.newPassword
+                });
+            }
+
+            const updatedUser = {
+                ...user,
+                first_name: profileEdit.first_name,
+                last_name: profileEdit.last_name,
+                email: profileEdit.email,
+                id_image_url: uploadedImageUrl
+            };
+
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            localStorage.setItem(profileImageStorageKey, uploadedImageUrl || '');
+            setProfileImagePreview(uploadedImageUrl || '');
+            setProfileImageFile(null);
+            setPasswordEdit({ oldPassword: '', newPassword: '', confirmPassword: '' });
+            Swal.fire('Success', 'Profile updated!', 'success');
             setShowProfileModal(false);
         } catch (err) {
-            Swal.fire('Error', err.response?.data?.message || 'Update failed', 'error');
+            Swal.fire('Error', err.response?.data?.message || err.message || 'Update failed', 'error');
         } finally {
             setProfileLoading(false);
+            setPasswordLoading(false);
         }
     };
 
@@ -191,55 +359,110 @@ const ProductCatalog = () => {
         }
     };
 
+    const handleSpeechToggle = () => {
+        if (!speechSupported || !recognitionRef.current) {
+            Swal.fire('Not Supported', 'Speech recognition is not supported in this browser.', 'info');
+            return;
+        }
+
+        try {
+            if (isListening) {
+                recognitionRef.current.stop();
+            } else {
+                recognitionRef.current.start();
+            }
+        } catch (err) {
+            console.error(err);
+            setIsListening(false);
+        }
+    };
+
     return (
-        <div className="catalog-container">
-            <div className="catalog-header">
+        <div
+            className="catalog-container"
+            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+        >
+            <div className="catalog-header glass-panel">
+                <div className="client-header-left">
+                    <button className="client-profile-button" onClick={openProfileModal} title="Profile Settings">
+                        {profileImagePreview ? (
+                            <img src={profileImagePreview} alt="Profile" className="client-profile-image" />
+                        ) : (
+                            <div className="client-profile-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
+                        )}
+                    </button>
+                    <div className="client-header-user-meta">
+                        <div className="client-header-name">{displayName || 'Client'}</div>
+                        <div className="client-header-role">{user?.email || 'Guest'}</div>
+                    </div>
+                </div>
+
                 <h1>TongTong Fish Culture</h1>
 
-                <div>
-                    <button onClick={openProfileModal}>👤</button>
+                <div className="client-header-right">
+                    {isClientLike && (
+                        <button className="client-cart-button" onClick={() => navigate('/cart')} title="Cart">
+                            <ShoppingCart size={20} />
+                        </button>
+                    )}
 
-                    {userRole === 'admin' && (
+                    {isAdmin && (
                         <>
                             <button
                                 onClick={() => {
                                     localStorage.setItem('adminActiveTab', 'products');
                                     navigate('/admin-dashboard');
                                 }}
+                                className="client-admin-link"
                             >
-                                ➕
-                            </button>
-                            <button
-                                onClick={() => {
-                                    localStorage.setItem('adminActiveTab', 'dashboard');
-                                    navigate('/admin-dashboard');
-                                }}
-                            >
-                                🛠️
+                                Admin
                             </button>
                         </>
                     )}
-
-                    {userRole === 'client' && (
-                        <>
-                            <button onClick={() => navigate('/cart')}>🛒</button>
-                            <button onClick={() => navigate('/order-history')}>📦</button>
-                        </>
-                    )}
-
-                    <button onClick={handleLogout}>🚪</button>
                 </div>
             </div>
 
-            <div className="product-grid">
+            <div className="product-toolbar glass-panel">
+                <div className="filter-group search-filter">
+                    <div className="search-input-wrap-client">
+                        <input
+                            type="text"
+                            placeholder="Search by name or category..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                        <button
+                            type="button"
+                            className={`speech-button ${isListening ? 'listening' : ''}`}
+                            onClick={handleSpeechToggle}
+                            title={speechSupported ? (isListening ? 'Stop voice input' : 'Start voice input') : 'Speech not supported'}
+                            aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
+                            disabled={!speechSupported}
+                        >
+                            {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                        </button>
+                    </div>
+                </div>
+                <div className="filter-group select-filter">
+                    <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+                        <option value="ASC">A-Z</option>
+                        <option value="DESC">Z-A</option>
+                    </select>
+                </div>
+            </div>
+
+            <div className="products-grid">
                 {loading ? (
                     <p>Loading...</p>
-                ) : products.length === 0 ? (
+                ) : visibleProducts.length === 0 ? (
                     <p>No products found</p>
                 ) : (
-                    products.map((product) => {
-                        const isDiscontinued = Boolean(product.is_deleted);
+                    visibleProducts.map((product) => {
+                        const isDiscontinued = isProductDeleted(product);
                         const isOutOfStock = !isDiscontinued && Number(product.stock || 0) <= 0;
+                        const isUnavailable = isDiscontinued || isOutOfStock;
+                        const canOpenDetails = !isDiscontinued;
+                        const unavailableLabel = isDiscontinued ? 'Discontinued' : 'Out of Stock';
                         const cardClassName = [
                             'product-card',
                             isDiscontinued ? 'discontinued' : '',
@@ -247,80 +470,61 @@ const ProductCatalog = () => {
                         ]
                             .filter(Boolean)
                             .join(' ');
-                        const stockLabel = isDiscontinued
-                            ? 'Discontinued'
-                            : isOutOfStock
-                              ? 'Out of stock'
-                              : `${product.stock} in stock`;
-                        const badgeClassName = isDiscontinued
-                            ? 'deleted'
-                            : isOutOfStock
-                              ? 'empty'
-                              : 'available';
 
                         return (
-                            <div key={product.product_id} className={cardClassName}>
-                                <div className="product-image" onClick={() => navigate(`/product/${product.product_id}`)}>
+                            <div
+                                key={product.product_id}
+                                className={cardClassName}
+                                onClick={canOpenDetails ? () => navigate(`/product/${product.product_id}`) : undefined}
+                                role={canOpenDetails ? 'button' : 'article'}
+                                tabIndex={canOpenDetails ? 0 : -1}
+                                aria-disabled={!canOpenDetails}
+                                onKeyDown={canOpenDetails ? (e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                        e.preventDefault();
+                                        navigate(`/product/${product.product_id}`);
+                                    }
+                                } : undefined}
+                            >
+                                <div className="product-image">
                                     <img
                                         src={product.image_url || 'https://via.placeholder.com/200'}
                                         alt={product.name}
                                     />
-                                    <span className={`stock-badge ${badgeClassName}`}>{stockLabel}</span>
                                 </div>
 
                                 <div className="product-info">
-                                    <h4>{product.name}</h4>
+                                    <h4 className="product-title">{product.name}</h4>
                                     <div className="category">{product.category}</div>
-                                    <div className="description">
-                                        {isDiscontinued
-                                            ? 'This product has been discontinued.'
-                                            : product.description || 'No description available.'}
-                                    </div>
-
-                                    <div className="product-footer">
+                                    <div className="product-meta-line">
                                         <div className="price">₱{Number(product.price || 0).toFixed(2)}</div>
-                                        <div className="stock-info">
-                                            <span className={`stock-badge ${badgeClassName}`}>{stockLabel}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="product-actions">
-                                        <button
-                                            className="btn-details"
-                                            onClick={() => navigate(`/product/${product.product_id}`)}
-                                        >
-                                            View
-                                        </button>
-
-                                        {userRole === 'admin' ? (
-                                            <>
-                                                <button
-                                                    onClick={() => {
-                                                        localStorage.setItem('adminActiveTab', 'products');
-                                                        navigate('/admin-dashboard');
-                                                    }}
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        localStorage.setItem('adminActiveTab', 'products');
-                                                        navigate('/admin-dashboard');
-                                                    }}
-                                                >
-                                                    Delete
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <button
-                                                className="btn-cart"
-                                                onClick={() => handleAddToCart(product)}
-                                                disabled={isDiscontinued || isOutOfStock}
-                                            >
-                                                Add to Cart
-                                            </button>
+                                        <div className="stock-text">Stock: {Number(product.stock || 0)}</div>
+                                        {isUnavailable && (
+                                            <div className="product-status unavailable">{unavailableLabel}</div>
                                         )}
                                     </div>
+
+                                    {!isDiscontinued && !isOutOfStock && (
+                                        <button
+                                            className="btn-cart"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleAddToCart(product);
+                                            }}
+                                        >
+                                            Add to Cart
+                                        </button>
+                                    )}
+
+                                    {!isDiscontinued && isOutOfStock && (
+                                        <button
+                                            className="btn-cart btn-cart-disabled-state"
+                                            type="button"
+                                            disabled
+                                        >
+                                            Out of Stock
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );
@@ -331,62 +535,124 @@ const ProductCatalog = () => {
             {showProfileModal && (
                 <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <h3>Edit Profile</h3>
+                        <div className="modal-header">
+                            <h3>Profile Settings</h3>
+                            <button className="close-button" onClick={() => setShowProfileModal(false)}><X size={24} /></button>
+                        </div>
 
                         {profileLoading ? (
                             <p>Loading...</p>
                         ) : (
-                            <>
-                                <form onSubmit={handleProfileSave}>
-                                    <input
-                                        name="first_name"
-                                        value={profileEdit.first_name || ''}
-                                        onChange={handleProfileEditChange}
-                                        placeholder="First Name"
-                                    />
-                                    <input
-                                        name="last_name"
-                                        value={profileEdit.last_name || ''}
-                                        onChange={handleProfileEditChange}
-                                        placeholder="Last Name"
-                                    />
-                                    <input
-                                        name="email"
-                                        value={profileEdit.email || ''}
-                                        onChange={handleProfileEditChange}
-                                        placeholder="Email"
-                                    />
+                            <form onSubmit={handleProfileSave} className="profile-form">
+                                <div className="profile-image-row">
+                                    {profileImagePreview ? (
+                                        <img src={profileImagePreview} alt="Profile Preview" className="profile-image-preview" />
+                                    ) : (
+                                        <div className="profile-image-preview profile-image-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
+                                    )}
+                                    <div className="profile-image-picker">
+                                        <label htmlFor="client-profile-image" className="field-label">Profile Image</label>
+                                        <input
+                                            id="client-profile-image"
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                setProfileImageFile(file || null);
+                                                if (file) {
+                                                    setProfileImagePreview(URL.createObjectURL(file));
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                </div>
 
-                                    <button type="submit">Save</button>
-                                </form>
+                                <div className="form-row">
+                                    <div className="form-field">
+                                        <label className="field-label" htmlFor="client-first-name">First Name</label>
+                                        <input id="client-first-name" name="first_name" value={profileEdit.first_name || ''} onChange={handleProfileEditChange} placeholder="First Name" />
+                                    </div>
+                                    <div className="form-field">
+                                        <label className="field-label" htmlFor="client-last-name">Last Name</label>
+                                        <input id="client-last-name" name="last_name" value={profileEdit.last_name || ''} onChange={handleProfileEditChange} placeholder="Last Name" />
+                                    </div>
+                                </div>
 
-                                <h4>Change Password</h4>
+                                <div className="form-row">
+                                    <div className="form-field">
+                                        <label className="field-label" htmlFor="client-email">Email</label>
+                                        <input id="client-email" name="email" value={profileEdit.email || ''} onChange={handleProfileEditChange} placeholder="Email" />
+                                    </div>
+                                    <div className="form-field">
+                                        <label className="field-label" htmlFor="client-contact-number">Contact Number</label>
+                                        <input id="client-contact-number" name="contact_number" value={profileEdit.contact_number || ''} onChange={handleProfileEditChange} placeholder="Contact Number" />
+                                    </div>
+                                </div>
 
-                                <form onSubmit={handlePasswordSave}>
-                                    <input
-                                        type="password"
-                                        name="oldPassword"
-                                        placeholder="Old Password"
-                                        onChange={handlePasswordEditChange}
-                                    />
-                                    <input
-                                        type="password"
-                                        name="newPassword"
-                                        placeholder="New Password"
-                                        onChange={handlePasswordEditChange}
-                                    />
-                                    <input
-                                        type="password"
-                                        name="confirmPassword"
-                                        placeholder="Confirm Password"
-                                        onChange={handlePasswordEditChange}
-                                    />
+                                <div className="form-row form-row-full">
+                                    <div className="form-field">
+                                        <label className="field-label" htmlFor="client-address">Address</label>
+                                        <textarea id="client-address" name="address" value={profileEdit.address || ''} onChange={handleProfileEditChange} placeholder="Address" rows={3} />
+                                    </div>
+                                </div>
 
-                                    <button type="submit">
-                                        {passwordLoading ? 'Saving...' : 'Change Password'}
+                                <div className="password-section">
+                                    <h4>Change Password</h4>
+                                    <div className="password-row">
+                                        <div className="password-input-wrap">
+                                            <label className="field-label" htmlFor="client-old-password">Old Password</label>
+                                            <input
+                                                id="client-old-password"
+                                                type={showOldPassword ? 'text' : 'password'}
+                                                name="oldPassword"
+                                                placeholder="Old Password"
+                                                onChange={handlePasswordEditChange}
+                                            />
+                                            <button type="button" className="password-toggle" onClick={() => setShowOldPassword((prev) => !prev)}>
+                                                {showOldPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                        <div className="password-input-wrap">
+                                            <label className="field-label" htmlFor="client-new-password">New Password</label>
+                                            <input
+                                                id="client-new-password"
+                                                type={showNewPassword ? 'text' : 'password'}
+                                                name="newPassword"
+                                                placeholder="New Password"
+                                                onChange={handlePasswordEditChange}
+                                            />
+                                            <button type="button" className="password-toggle" onClick={() => setShowNewPassword((prev) => !prev)}>
+                                                {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                        <div className="password-input-wrap">
+                                            <label className="field-label" htmlFor="client-confirm-password">Confirm Password</label>
+                                            <input
+                                                id="client-confirm-password"
+                                                type={showConfirmPassword ? 'text' : 'password'}
+                                                name="confirmPassword"
+                                                placeholder="Confirm Password"
+                                                onChange={handlePasswordEditChange}
+                                            />
+                                            <button type="button" className="password-toggle" onClick={() => setShowConfirmPassword((prev) => !prev)}>
+                                                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="modal-actions modal-actions-top">
+                                    <button type="button" className="btn-logout" onClick={handleLogout}>
+                                        <LogOut size={16} /> Logout
                                     </button>
-                                </form>
-                            </>
+                                    <button type="button" className="btn-secondary" onClick={() => setShowProfileModal(false)}>
+                                        Cancel
+                                    </button>
+                                    <button type="submit" className="btn-primary" disabled={profileLoading || passwordLoading}>
+                                        {profileLoading || passwordLoading ? 'Saving...' : 'Save'}
+                                    </button>
+                                </div>
+                            </form>
                         )}
                     </div>
                 </div>

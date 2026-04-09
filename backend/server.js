@@ -455,9 +455,14 @@ app.post('/api/reset-password', (req, res) => {
 
 // --- 10. GET ALL PRODUCTS (including deleted/out of stock) ---
 app.get('/api/products', (req, res) => {
-    const { search, category, priceMin, priceMax } = req.query;
-    let sql = "SELECT * FROM products WHERE is_deleted = 0";
+    const { search, category, priceMin, priceMax, includeDeleted } = req.query;
+    const shouldIncludeDeleted = String(includeDeleted || '').toLowerCase() === 'true' || String(includeDeleted || '') === '1';
+    let sql = "SELECT * FROM products WHERE 1 = 1";
     const params = [];
+
+    if (!shouldIncludeDeleted) {
+        sql += " AND is_deleted = 0";
+    }
 
     if (search) {
         sql += " AND (name LIKE ? OR description LIKE ?)";

@@ -27,6 +27,20 @@ const UserManagement = () => {
         return roleName;
     };
 
+    const getUniqueRoles = () => {
+        const normalized = roles.map(role => ({
+            ...role,
+            normalizedName: normalizeRoleName(role.role_name)
+        }));
+        const uniqueMap = new Map();
+        normalized.forEach(role => {
+            if (!uniqueMap.has(role.normalizedName)) {
+                uniqueMap.set(role.normalizedName, role);
+            }
+        });
+        return Array.from(uniqueMap.values());
+    };
+
     useEffect(() => {
         fetchRoles();
         fetchUsers();
@@ -545,9 +559,9 @@ const UserManagement = () => {
                                     className="role-select"
                                 >
                                     <option value="">-- Select Role --</option>
-                                    {roles.map(role => (
-                                        <option key={role.role_id} value={normalizeRoleName(role.role_name)}>
-                                            {normalizeRoleName(role.role_name).charAt(0).toUpperCase() + normalizeRoleName(role.role_name).slice(1)}
+                                    {getUniqueRoles().map(role => (
+                                        <option key={role.role_id} value={role.normalizedName}>
+                                            {role.normalizedName.charAt(0).toUpperCase() + role.normalizedName.slice(1)}
                                         </option>
                                     ))}
                                 </select>

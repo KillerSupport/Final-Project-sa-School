@@ -1,3 +1,121 @@
+
+/* Low Stock Add Stock Feature */
+.add-stock-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.add-stock-form {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.add-stock-input {
+    width: 70px;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.add-stock-input:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.btn-edit-stock {
+    padding: 8px 14px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.btn-edit-stock:hover {
+    background: #2563eb;
+    transform: translateY(-1px);
+}
+
+.btn-add-stock {
+    padding: 8px 12px;
+    background: #10b981;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 44px;
+}
+
+.btn-add-stock:hover {
+    background: #059669;
+}
+
+.btn-cancel-stock {
+    padding: 8px 12px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 44px;
+}
+
+.btn-cancel-stock:hover {
+    background: #dc2626;
+}
+
+.low-stock-current-cell .stock-count-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    background: #f3f4f6;
+    border-radius: 8px;
+}
+
+.low-stock-current-cell .stock-count-number {
+    min-width: 0;
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.low-stock-current-cell .admin-low-stock-badge {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.low-stock-action-cell {
+    text-align: left;
+}
+
+.low-stock-action-cell .add-stock-wrap {
+    width: 100%;
+    justify-content: flex-start;
+}
 /* Dashboard Analytics Section (Best Seller, Reports) */
 .dashboard-analytics-section {
     margin-top: 48px;

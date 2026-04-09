@@ -47,6 +47,8 @@ const AdminDashboard = () => {
     const [editingId, setEditingId] = useState(null);
     const [imagePreview, setImagePreview] = useState('');
     const [uploading, setUploading] = useState(false);
+    const [addingStockProductId, setAddingStockProductId] = useState(null);
+    const [addingStockQuantity, setAddingStockQuantity] = useState('');
 
     useEffect(() => {
         localStorage.setItem('adminActiveTab', activeTab);
@@ -74,8 +76,13 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         if (activeTab === 'website-settings') {
-            axios.get('http://localhost:5000/api/background-settings/backgroundImage')
-                .then(res => setWebsiteBgUrl(res.data.settingValue || ''))
+            axios.get('http://localhost:5000/api/background-settings')
+                .then(res => {
+                    const setting = Array.isArray(res.data)
+                        ? res.data.find((item) => item.setting_name === 'client_background')
+                        : null;
+                    setWebsiteBgUrl(setting?.setting_value || '');
+                })
                 .catch(() => setWebsiteBgUrl(''));
         }
     }, [activeTab]);
@@ -516,6 +523,40 @@ const AdminDashboard = () => {
     const handleStockChange = (e) => {
         const value = e.target.value.replace(/\D/g, '');
         setFormData(prev => ({ ...prev, stock: value }));
+    };
+
+    const handleAddStockToLowStockProduct = async (productId) => {
+        const product = lowStockProducts.find(p => p.product_id === productId);
+        if (!product) return;
+
+        const quantityNum = Number(addingStockQuantity || 0);
+        if (quantityNum <= 0) {
+            Swal.fire('Error', 'Please enter a valid quantity', 'error');
+            return;
+        }
+
+        try {
+            const newStock = Number(product.stock || 0) + quantityNum;
+            await axios.put(`http://localhost:5000/api/products/${productId}/stock`, {
+                stock: newStock,
+                userId
+            });
+
+            setAddingStockProductId(null);
+            setAddingStockQuantity('');
+
+            setLowStockProducts(prev =>
+                prev.map(p =>
+                    p.product_id === productId
+                        ? { ...p, stock: newStock }
+                        : p
+                )
+            );
+
+            Swal.fire('Success', `Added ${quantityNum} units. New stock: ${newStock}`, 'success');
+        } catch (err) {
+            Swal.fire('Error', err.response?.data?.message || 'Failed to update stock', 'error');
+        }
     };
 
     const resetForm = () => {
@@ -1152,7 +1193,10 @@ const AdminDashboard = () => {
                                 formData.append('image', websiteBgFile);
                                 const uploadRes = await axios.post('http://localhost:5000/api/upload-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
                                 const imageUrl = uploadRes.data.imageUrl;
-                                await axios.put('http://localhost:5000/api/background-settings/backgroundImage', { settingValue: imageUrl });
+                                await axios.put(`http://localhost:5000/api/background-settings/client_background?userId=${userId}`, {
+                                    settingValue: imageUrl,
+                                    userId
+                                });
                                 Swal.fire('Success', 'Background updated!', 'success');
                                 setWebsiteBgUrl(imageUrl);
                             } catch (err) {
@@ -1412,12 +1456,13 @@ const AdminDashboard = () => {
                                 <tr>
                                     <th>Product</th>
                                     <th>Current Stock</th>
+                                    <th>Add Stock</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {visibleLowStockProducts.length === 0 ? (
                                     <tr>
-                                        <td colSpan="2" className="empty-state">No active products found</td>
+                                        <td colSpan="3" className="empty-state">No active products found</td>
                                     </tr>
                                 ) : (
                                     visibleLowStockProducts.map(product => (
@@ -1436,12 +1481,53 @@ const AdminDashboard = () => {
                                                     <span className="product-name">{product.name}</span>
                                                 </div>
                                             </td>
-                                            <td>
+                                            <td className="low-stock-current-cell">
                                                 <div className="stock-count-wrap">
                                                     <span className="stock-count-number">
                                                         {Number.isFinite(Number(product.stock)) ? Number(product.stock) : 0}
                                                     </span>
-                                                    <span className="stock-badge out-of-stock">Low Stock</span>
+                                                    <span className="admin-low-stock-badge">Low Stock</span>
+                                                </div>
+                                            </td>
+                                            <td className="low-stock-action-cell">
+                                                <div className="add-stock-wrap">
+                                                    {addingStockProductId === product.product_id ? (
+                                                        <div className="add-stock-form">
+                                                            <input
+                                                                type="number"
+                                                                placeholder="Qty"
+                                                                min="1"
+                                                                value={addingStockQuantity}
+                                                                onChange={(e) => setAddingStockQuantity(e.target.value)}
+                                                                className="add-stock-input"
+                                                            />
+                                                            <button
+                                                                className="btn-add-stock"
+                                                                onClick={() => handleAddStockToLowStockProduct(product.product_id)}
+                                                            >
+                                                                ✓
+                                                            </button>
+                                                            <button
+                                                                className="btn-cancel-stock"
+                                                                onClick={() => {
+                                                                    setAddingStockProductId(null);
+                                                                    setAddingStockQuantity('');
+                                                                }}
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            className="btn-edit-stock"
+                                                            onClick={() => {
+                                                                setAddingStockProductId(product.product_id);
+                                                                setAddingStockQuantity('');
+                                                            }}
+                                                        >
+                                                            Add Stock
+                                                        </button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

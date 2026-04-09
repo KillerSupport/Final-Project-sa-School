@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { ShoppingCart, ArrowLeft, Minus, Plus } from 'lucide-react';
+import { ShoppingCart, ArrowLeft, Minus, Plus, X } from 'lucide-react';
 import './ProductDetails.css';
 
 const ProductDetails = () => {
@@ -11,11 +11,14 @@ const ProductDetails = () => {
     const [product, setProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
     const [loading, setLoading] = useState(true);
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
+    const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
     
     const userId = JSON.parse(localStorage.getItem('user'))?.user_id || null;
 
     useEffect(() => {
         fetchProduct();
+        fetchBackground();
     }, [id]);
 
     const fetchProduct = async () => {
@@ -32,6 +35,18 @@ const ProductDetails = () => {
             navigate('/catalog');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchBackground = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/background-settings');
+            const setting = Array.isArray(res.data)
+                ? res.data.find((item) => item.setting_name === 'client_background')
+                : null;
+            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+        } catch {
+            setBackgroundImageUrl('/isda_bg.png');
         }
     };
 
@@ -85,129 +100,182 @@ const ProductDetails = () => {
     const isOutOfStock = !isDiscontinued && Number(product.stock || 0) <= 0;
     const isUnavailable = isDiscontinued || isOutOfStock;
     const availabilityLabel = isDiscontinued ? 'Discontinued' : isOutOfStock ? 'Out of stock' : `${product.stock} in stock`;
+    const descriptionSections = String(product.description || '')
+        .split(/\n\s*\n/)
+        .map((section) => section.trim())
+        .filter(Boolean);
 
     return (
-        <div className="product-details-container">
-            <button 
-                className="back-button"
-                onClick={() => navigate('/catalog')}
-            >
-                <ArrowLeft size={20} />
-                Back to Catalog
-            </button>
-
-            <div className="details-content">
-                <div className="image-section">
-                    <img 
-                        src={product.image_url || 'https://via.placeholder.com/500'} 
-                        alt={product.name}
-                        className={`product-main-image ${isUnavailable ? 'is-unavailable' : ''}`}
-                    />
-                    {isUnavailable && (
-                        <div className={`out-of-stock-overlay ${isDiscontinued ? 'discontinued' : ''}`}>
-                            {availabilityLabel.toUpperCase()}
-                        </div>
-                    )}
+        <div 
+            className="product-details-container"
+            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+        >
+            <div className="product-details-header glass-panel">
+                <div className="product-details-header-left">
+                    <button 
+                        className="back-button"
+                        onClick={() => navigate('/catalog')}
+                    >
+                        <ArrowLeft size={20} />
+                        Back to Catalog
+                    </button>
                 </div>
 
-                <div className="info-section">
-                    <div className="category-badge">{product.category}</div>
-                    
-                    <h1>{product.name}</h1>
-                    
-                    <div className="rating">
-                        <span className="stars">★★★★★ (0 reviews)</span>
-                    </div>
+                <h1>TongTong Fish Culture</h1>
 
-                    <div className="price-section">
-                        <span className="price">₱{product.price}</span>
-                        <span className="stock-info">
-                            {!isUnavailable ? (
-                                <span className="in-stock">✓ {product.stock} in stock</span>
-                            ) : (
-                                <span className={isDiscontinued ? 'discontinued' : 'out-of-stock'}>{availabilityLabel}</span>
-                            )}
-                        </span>
-                    </div>
+                <div className="product-details-header-right">
+                    <button
+                        className="cart-shortcut-button"
+                        onClick={() => navigate('/cart')}
+                        title="Go to cart"
+                        aria-label="Go to cart"
+                    >
+                        <ShoppingCart size={20} />
+                    </button>
+                </div>
+            </div>
 
-                    <div className="description-section">
-                        <h3>Description</h3>
-                        <p>{product.description}</p>
-                    </div>
-
-                    {product.pet_care_content && !isDiscontinued && (
-                        <div className="pet-care-section">
-                            <h3>🐠 Pet Care Guide</h3>
-                            <div className="pet-care-content">
-                                {product.pet_care_content.split('\n').map((paragraph, index) => (
-                                    <p key={index}>{paragraph}</p>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="specifications">
-                        <h3>Specifications</h3>
-                        <ul>
-                            <li><strong>Type:</strong> Pet Fish</li>
-                            <li><strong>Category:</strong> {product.category}</li>
-                            <li><strong>Availability:</strong> {availabilityLabel}</li>
-                        </ul>
-                    </div>
-
-                    <div className="purchase-section">
-                        <div className="quantity-selector">
-                            <label>Quantity:</label>
-                            <div className="quantity-controls">
-                                <button 
-                                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                                    disabled={quantity <= 1}
-                                >
-                                    <Minus size={18} />
-                                </button>
-                                <input 
-                                    type="number" 
-                                    value={quantity}
-                                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                                    min="1"
-                                    max={isUnavailable ? 1 : product.stock}
-                                    disabled={isUnavailable}
+            <div className="product-details-panel">
+                <div className="details-content">
+                    <div className="media-column">
+                        <div className="image-section">
+                            <button
+                                type="button"
+                                className="image-view-trigger"
+                                onClick={() => setIsImageViewerOpen(true)}
+                                aria-label="Open product image preview"
+                            >
+                                <img 
+                                    src={product.image_url || 'https://via.placeholder.com/500'} 
+                                    alt={product.name}
+                                    className={`product-main-image ${isUnavailable ? 'is-unavailable' : ''}`}
                                 />
+                            </button>
+                            {isUnavailable && (
+                                <div className={`out-of-stock-overlay ${isDiscontinued ? 'discontinued' : ''}`}>
+                                    {availabilityLabel.toUpperCase()}
+                                </div>
+                            )}
+                        </div>
+
+                        {!isUnavailable ? (
+                            <div className="purchase-section">
+                                <div className="quantity-selector">
+                                    <label>Quantity:</label>
+                                    <div className="quantity-controls">
+                                        <button 
+                                            onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                            disabled={quantity <= 1}
+                                        >
+                                            <Minus size={18} />
+                                        </button>
+                                        <input 
+                                            type="number" 
+                                            value={quantity}
+                                            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                                            min="1"
+                                            max={product.stock}
+                                        />
+                                        <button 
+                                            onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                                            disabled={quantity >= product.stock}
+                                        >
+                                            <Plus size={18} />
+                                        </button>
+                                    </div>
+                                </div>
                                 <button 
-                                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                                    disabled={isUnavailable || quantity >= product.stock}
+                                    className="add-to-cart-btn"
+                                    onClick={handleAddToCart}
                                 >
-                                    <Plus size={18} />
+                                    <ShoppingCart size={20} />
+                                    Add to Cart
                                 </button>
+                            </div>
+                        ) : (
+                            <div className="purchase-section">
+                                <div className="out-of-stock" style={{ fontWeight: 700 }}>
+                                    {isDiscontinued
+                                        ? 'This product is discontinued and cannot be added to cart.'
+                                        : 'This product is currently out of stock and cannot be added to cart.'}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="info-section">
+                        <div className="category-badge">{product.category}</div>
+                        <h1>{product.name}</h1>
+                        <div className="price-section">
+                            <span className="price">₱{product.price}</span>
+                            <span className="stock-info">
+                                {!isUnavailable ? (
+                                    <span className="in-stock">✓ {product.stock} in stock</span>
+                                ) : (
+                                    <span className={isDiscontinued ? 'discontinued' : 'out-of-stock'}>{availabilityLabel}</span>
+                                )}
+                            </span>
+                        </div>
+                        <div className="specifications">
+                            <h3>Specifications</h3>
+                            <ul>
+                                <li><strong>Type:</strong> Pet Fish</li>
+                                <li><strong>Category:</strong> {product.category}</li>
+                                <li><strong>Availability:</strong> {availabilityLabel}</li>
+                            </ul>
+                        </div>
+
+                        <div className="description-section">
+                            <h3>Description</h3>
+                            <div className="description-content">
+                                {descriptionSections.length > 0 ? (
+                                    descriptionSections.map((section, index) => (
+                                        <p key={index}>{section}</p>
+                                    ))
+                                ) : (
+                                    <p>{product.description}</p>
+                                )}
                             </div>
                         </div>
 
-                        <button 
-                            className="add-to-cart-btn"
-                            onClick={handleAddToCart}
-                            disabled={isUnavailable}
-                        >
-                            <ShoppingCart size={20} />
-                            Add to Cart
-                        </button>
-                    </div>
-
-                    <div className="additional-info">
-                        <div className="info-item">
-                            <span className="label">🚚 Free Shipping</span>
-                            <span className="value">On orders ₱1000 and above</span>
-                        </div>
-                        <div className="info-item">
-                            <span className="label">🔄 Easy Returns</span>
-                            <span className="value">30-day return policy</span>
-                        </div>
-                        <div className="info-item">
-                            <span className="label">🏪 Store Payment</span>
-                            <span className="value">Pay and claim your order at the store</span>
-                        </div>
+                        {product.pet_care_content && !isDiscontinued && (
+                            <div className="pet-care-section">
+                                <h3>🐠 Pet Care Guide</h3>
+                                <div className="pet-care-content">
+                                    {product.pet_care_content.split('\n').map((paragraph, index) => (
+                                        <p key={index}>{paragraph}</p>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
+
+            {isImageViewerOpen && (
+                <div
+                    className="image-view-overlay"
+                    onClick={() => setIsImageViewerOpen(false)}
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Product image preview"
+                >
+                    <button
+                        type="button"
+                        className="image-view-close"
+                        onClick={() => setIsImageViewerOpen(false)}
+                        aria-label="Close image preview"
+                    >
+                        <X size={20} />
+                    </button>
+                    <img
+                        src={product.image_url || 'https://via.placeholder.com/1200'}
+                        alt={product.name}
+                        className="image-view-preview"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
+            )}
         </div>
     );
 };
