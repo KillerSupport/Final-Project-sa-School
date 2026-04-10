@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { User, ShoppingCart, LogOut, Eye, EyeOff, X, Mic, MicOff } from 'lucide-react';
+import { User, ShoppingCart, Package, Settings, LogOut, Eye, EyeOff, X, Mic, MicOff } from 'lucide-react';
 import './ProductCatalog.css';
 
 const ProductCatalog = () => {
@@ -21,6 +21,19 @@ const ProductCatalog = () => {
     const [showOldPassword, setShowOldPassword] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [discountRequestType, setDiscountRequestType] = useState('none');
+    const [discountIdFrontFile, setDiscountIdFrontFile] = useState(null);
+    const [discountIdBackFile, setDiscountIdBackFile] = useState(null);
+    const [discountLoading, setDiscountLoading] = useState(false);
+    const [discountState, setDiscountState] = useState({
+        is_senior: 0,
+        is_pwd: 0,
+        senior_verified: null,
+        pwd_verified: null,
+        id_image_url: '',
+        id_front_image_url: '',
+        id_back_image_url: ''
+    });
 
     const navigate = useNavigate();
 
@@ -253,6 +266,24 @@ const ProductCatalog = () => {
                 address: res.data.address || '',
                 email: res.data.email || ''
             });
+            setDiscountState({
+                is_senior: Number(res.data.is_senior || 0),
+                is_pwd: Number(res.data.is_pwd || 0),
+                senior_verified: res.data.senior_verified,
+                pwd_verified: res.data.pwd_verified,
+                id_image_url: res.data.id_image_url || '',
+                id_front_image_url: res.data.id_front_image_url || '',
+                id_back_image_url: res.data.id_back_image_url || ''
+            });
+            setDiscountRequestType(
+                Number(res.data.is_senior || 0) === 1
+                    ? 'senior'
+                    : Number(res.data.is_pwd || 0) === 1
+                        ? 'pwd'
+                        : 'none'
+            );
+            setDiscountIdFrontFile(null);
+            setDiscountIdBackFile(null);
             setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
         } catch {
             Swal.fire('Error', 'Failed to load profile', 'error');
@@ -359,6 +390,60 @@ const ProductCatalog = () => {
         }
     };
 
+    const handleDiscountRequestConfirm = async () => {
+        const hasApprovedDiscount = Number(discountState.senior_verified) === 1 || Number(discountState.pwd_verified) === 1;
+
+        if (hasApprovedDiscount) {
+            Swal.fire('Locked', 'This discount request is already approved and locked.', 'info');
+            return;
+        }
+
+        if (discountRequestType === 'none') {
+            Swal.fire('Select Request', 'Please select Senior Citizen or PWD before confirming.', 'warning');
+            return;
+        }
+
+        if (!discountIdFrontFile || !discountIdBackFile) {
+            Swal.fire('ID Required', 'Please upload both the front and back of your ID for discount verification.', 'warning');
+            return;
+        }
+
+        setDiscountLoading(true);
+
+        try {
+            const idFormData = new FormData();
+            idFormData.append('idFront', discountIdFrontFile);
+            idFormData.append('idBack', discountIdBackFile);
+            idFormData.append('userId', String(userId));
+            idFormData.append('isSenior', String(discountRequestType === 'senior'));
+            idFormData.append('isPwd', String(discountRequestType === 'pwd'));
+
+            const requestRes = await axios.post('http://localhost:5000/api/upload-id', idFormData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            setDiscountState((prev) => ({
+                ...prev,
+                is_senior: discountRequestType === 'senior' ? 1 : 0,
+                is_pwd: discountRequestType === 'pwd' ? 1 : 0,
+                senior_verified: discountRequestType === 'senior' ? null : 0,
+                pwd_verified: discountRequestType === 'pwd' ? null : 0,
+                id_image_url: requestRes.data?.idFrontImageUrl || prev.id_image_url,
+                id_front_image_url: requestRes.data?.idFrontImageUrl || prev.id_front_image_url,
+                id_back_image_url: requestRes.data?.idBackImageUrl || prev.id_back_image_url
+            }));
+
+            setDiscountIdFrontFile(null);
+            setDiscountIdBackFile(null);
+
+            Swal.fire('Submitted', 'Discount request submitted. Waiting for admin approval.', 'success');
+        } catch (err) {
+            Swal.fire('Error', err.response?.data?.message || err.message || 'Failed to submit discount request', 'error');
+        } finally {
+            setDiscountLoading(false);
+        }
+    };
+
     const handleSpeechToggle = () => {
         if (!speechSupported || !recognitionRef.current) {
             Swal.fire('Not Supported', 'Speech recognition is not supported in this browser.', 'info');
@@ -384,7 +469,7 @@ const ProductCatalog = () => {
         >
             <div className="catalog-header glass-panel">
                 <div className="client-header-left">
-                    <button className="client-profile-button" onClick={openProfileModal} title="Profile Settings">
+                    <button className="client-profile-button" type="button" title="Profile">
                         {profileImagePreview ? (
                             <img src={profileImagePreview} alt="Profile" className="client-profile-image" />
                         ) : (
@@ -401,9 +486,17 @@ const ProductCatalog = () => {
 
                 <div className="client-header-right">
                     {isClientLike && (
-                        <button className="client-cart-button" onClick={() => navigate('/cart')} title="Cart">
-                            <ShoppingCart size={20} />
-                        </button>
+                        <>
+                            <button className="client-settings-button" onClick={openProfileModal} title="Settings">
+                                <Settings size={20} />
+                            </button>
+                            <button className="client-order-button" onClick={() => navigate('/order-info')} title="Order Info">
+                                <Package size={20} />
+                            </button>
+                            <button className="client-cart-button" onClick={() => navigate('/cart')} title="Cart">
+                                <ShoppingCart size={20} />
+                            </button>
+                        </>
                     )}
 
                     {isAdmin && (
@@ -595,6 +688,108 @@ const ProductCatalog = () => {
                                         <textarea id="client-address" name="address" value={profileEdit.address || ''} onChange={handleProfileEditChange} placeholder="Address" rows={3} />
                                     </div>
                                 </div>
+
+                                {(() => {
+                                    const hasApprovedDiscount = Number(discountState.senior_verified) === 1 || Number(discountState.pwd_verified) === 1;
+                                    const hasPendingRequest = (Number(discountState.is_senior) === 1 && discountState.senior_verified === null)
+                                        || (Number(discountState.is_pwd) === 1 && discountState.pwd_verified === null);
+                                    const discountLabel = Number(discountState.is_senior) === 1 ? 'Senior Citizen'
+                                        : Number(discountState.is_pwd) === 1 ? 'PWD' : 'None';
+
+                                    return (
+                                        <div className={`discount-request-section ${hasApprovedDiscount ? 'discount-request-approved' : ''}`}>
+                                            <h4>Discount Verification Request</h4>
+                                            <p className="discount-help-text">Request Senior/PWD discount by selecting one option and submitting a valid ID proof.</p>
+
+                                            <div className="discount-radio-group" role="radiogroup" aria-label="Discount request type">
+                                                <label>
+                                                    <input
+                                                        type="radio"
+                                                        name="discountRequestType"
+                                                        value="none"
+                                                        checked={discountRequestType === 'none'}
+                                                        onChange={(e) => setDiscountRequestType(e.target.value)}
+                                                        disabled={hasApprovedDiscount}
+                                                    />
+                                                    No request
+                                                </label>
+                                                <label>
+                                                    <input
+                                                        type="radio"
+                                                        name="discountRequestType"
+                                                        value="senior"
+                                                        checked={discountRequestType === 'senior'}
+                                                        onChange={(e) => setDiscountRequestType(e.target.value)}
+                                                        disabled={hasApprovedDiscount}
+                                                    />
+                                                    Senior Citizen
+                                                </label>
+                                                <label>
+                                                    <input
+                                                        type="radio"
+                                                        name="discountRequestType"
+                                                        value="pwd"
+                                                        checked={discountRequestType === 'pwd'}
+                                                        onChange={(e) => setDiscountRequestType(e.target.value)}
+                                                        disabled={hasApprovedDiscount}
+                                                    />
+                                                    PWD
+                                                </label>
+                                            </div>
+
+                                            <div className="form-field">
+                                                <label className="field-label" htmlFor="client-discount-id-front">Upload ID Front</label>
+                                                <input
+                                                    id="client-discount-id-front"
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={hasApprovedDiscount}
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        setDiscountIdFrontFile(file || null);
+                                                    }}
+                                                />
+                                            </div>
+
+                                            <div className="form-field">
+                                                <label className="field-label" htmlFor="client-discount-id-back">Upload ID Back</label>
+                                                <input
+                                                    id="client-discount-id-back"
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={hasApprovedDiscount}
+                                                    onChange={(e) => {
+                                                        const file = e.target.files?.[0];
+                                                        setDiscountIdBackFile(file || null);
+                                                    }}
+                                                />
+                                            </div>
+
+                                            <div className="discount-status-action-row">
+                                                <p className="discount-status-message">
+                                                    {hasApprovedDiscount
+                                                        ? `Approved: ${discountLabel} discount is active. Request is now locked.`
+                                                        : hasPendingRequest
+                                                            ? `Pending: ${discountLabel} request is waiting for admin review.`
+                                                            : 'No active discount request.'}
+                                                </p>
+
+                                                <button
+                                                    type="button"
+                                                    className="btn-primary discount-confirm-btn"
+                                                    onClick={handleDiscountRequestConfirm}
+                                                    disabled={hasApprovedDiscount || discountLoading}
+                                                >
+                                                    {discountLoading ? 'Confirming...' : 'Confirm'}
+                                                </button>
+                                            </div>
+
+                                            <p className="discount-file-note">
+                                                Upload both the front and back images of your ID, then click Confirm to submit the request.
+                                            </p>
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="password-section">
                                     <h4>Change Password</h4>

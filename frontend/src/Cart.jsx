@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { Trash2, Plus, Minus, ShoppingCart, ArrowLeft } from 'lucide-react';
+import { Trash2, Plus, Minus, ShoppingCart, Package, ArrowLeft } from 'lucide-react';
 import './Cart.css';
 
 const Cart = () => {
@@ -94,21 +94,21 @@ const Cart = () => {
         }
     };
 
-    const calculateTotal = () => {
-        return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-    };
-
     const calculateSubtotal = () => {
         return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
     };
 
-    const discountRate = userProfile && (userProfile.is_senior || userProfile.is_pwd) ? 0.05 : 0;
+    const hasApprovedDiscount = userProfile && (
+        (Number(userProfile.is_senior) === 1 && Number(userProfile.senior_verified) === 1) ||
+        (Number(userProfile.is_pwd) === 1 && Number(userProfile.pwd_verified) === 1)
+    );
+    const discountRate = hasApprovedDiscount ? 0.05 : 0;
     const discountAmount = calculateSubtotal() * discountRate;
     const discountedSubtotal = calculateSubtotal() - discountAmount;
 
     const shippingFee = 0;
-    const tax = discountedSubtotal * 0.05; // 5% tax
-    const total = discountedSubtotal + tax;
+    const tax = 0;
+    const total = discountedSubtotal + shippingFee;
 
     const handleCheckout = () => {
         navigate('/checkout', { 
@@ -125,17 +125,30 @@ const Cart = () => {
             className="cart-container"
             style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
         >
-            <button 
-                className="back-button"
-                onClick={() => navigate('/catalog')}
-            >
-                <ArrowLeft size={20} />
-                Continue Shopping
-            </button>
+            <div className="cart-header glass-panel">
+                <div className="cart-header-left">
+                    <button
+                        className="back-button"
+                        onClick={() => navigate('/catalog')}
+                        type="button"
+                    >
+                        <ArrowLeft size={20} />
+                        Back to Catalog
+                    </button>
+                </div>
 
-            <div className="page-title">
-                <ShoppingCart size={32} />
                 <h1>Shopping Cart</h1>
+
+                <div className="cart-header-right">
+                    <button
+                        className="order-info-button"
+                        onClick={() => navigate('/order-info')}
+                        type="button"
+                        title="Order Info"
+                    >
+                        <Package size={20} />
+                    </button>
+                </div>
             </div>
 
             {cartItems.length === 0 ? (
@@ -216,11 +229,10 @@ const Cart = () => {
                     <div className="modern-cart-footer">
                         <div className="modern-cart-totals">
                             <div className="subtotal-main">Sub Total: ₱{discountedSubtotal.toFixed(2)}</div>
-                            <div className="subtotal-note">Excl. Tax</div>
+                            <div className="subtotal-note">Final subtotal</div>
                             {discountRate > 0 && (
                                 <div className="footer-mini-note">Discount ({(discountRate * 100).toFixed(0)}%): -₱{discountAmount.toFixed(2)}</div>
                             )}
-                            <div className="footer-mini-note">Tax (5%): ₱{tax.toFixed(2)}</div>
                             <div className="footer-total">Total: ₱{total.toFixed(2)}</div>
                         </div>
 

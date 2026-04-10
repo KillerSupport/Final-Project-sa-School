@@ -27,6 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 <Route path="/product/:id" element={<ProductDetails />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/checkout" element={<Checkout />} />
+                <Route path="/order-info" element={<OrderHistory />} />
                 <Route path="/order-history" element={<OrderHistory />} />
                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                 <Route path="/worker-dashboard" element={<WorkerDashboard />} />

@@ -1,26 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { MapPin, ArrowLeft } from 'lucide-react';
+import { User, ArrowLeft } from 'lucide-react';
 import './Checkout.css';
 
 const Checkout = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const { cartItems, subtotal, discountedSubtotal, discountAmount, discountRate, shippingFee, tax, total } = location.state || {};
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     
     const user = JSON.parse(localStorage.getItem('user'));
     const [formData, setFormData] = useState({
         firstName: user?.first_name || '',
+        middleName: user?.middle_name || '',
         lastName: user?.last_name || '',
+        suffix: user?.suffix || '',
         email: user?.email || '',
         phone: user?.contact_number || '',
-        address: user?.address || '',
-        city: '',
-        postalCode: ''
     });
     const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        const fetchBackground = async () => {
+            try {
+                const res = await axios.get('http://localhost:5000/api/background-settings');
+                const setting = Array.isArray(res.data)
+                    ? res.data.find((item) => item.setting_name === 'client_background')
+                    : null;
+                setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+            } catch {
+                setBackgroundImageUrl('/isda_bg.png');
+            }
+        };
+
+        fetchBackground();
+    }, []);
 
     if (!cartItems || cartItems.length === 0) {
         return (
@@ -41,7 +57,7 @@ const Checkout = () => {
     };
 
     const validateForm = () => {
-        if (!formData.firstName || !formData.lastName || !formData.email) {
+        if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
             Swal.fire({
                 title: 'Error',
                 text: 'Please fill in all required fields',
@@ -78,7 +94,7 @@ const Checkout = () => {
                 userId: user.user_id,
                 items: cartItems,
                 totalAmount: total,
-                shippingAddress: `${formData.address}, ${formData.city} ${formData.postalCode}`,
+                shippingAddress: user?.address || 'N/A',
                 paymentMethod: 'cash_on_store'
             });
 
@@ -89,7 +105,7 @@ const Checkout = () => {
                     icon: 'success',
                     confirmButtonColor: '#2563eb'
                 }).then(() => {
-                    navigate('/order-history');
+                    navigate('/order-info');
                 });
             }
         } catch (err) {
@@ -105,28 +121,36 @@ const Checkout = () => {
     };
 
     return (
-        <div className="checkout-container">
-            <button 
-                className="back-button"
-                onClick={() => navigate('/cart')}
-            >
-                <ArrowLeft size={20} />
-                Back to Cart
-            </button>
+        <div
+            className="checkout-container"
+            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+        >
+            <div className="checkout-header glass-panel">
+                <div className="checkout-header-left">
+                    <button
+                        className="back-button"
+                        onClick={() => navigate('/cart')}
+                        type="button"
+                    >
+                        <ArrowLeft size={20} />
+                        Back to Cart
+                    </button>
+                </div>
 
-            <h1 className="page-title">Checkout</h1>
+                <h1>Checkout</h1>
+
+                <div className="checkout-header-right" />
+            </div>
 
             <div className="checkout-content">
-                {/* Form Section */}
                 <form className="checkout-form" onSubmit={handleSubmit}>
-                    {/* Shipping Information */}
                     <section className="form-section">
-                        <h2><MapPin size={20} /> Shipping Information</h2>
-                        
+                        <h2><User size={20} /> User Information</h2>
+
                         <div className="form-row">
                             <div className="form-group">
                                 <label>First Name *</label>
-                                <input 
+                                <input
                                     type="text"
                                     name="firstName"
                                     value={formData.firstName}
@@ -135,8 +159,20 @@ const Checkout = () => {
                                 />
                             </div>
                             <div className="form-group">
+                                <label>Middle Name (Optional)</label>
+                                <input
+                                    type="text"
+                                    name="middleName"
+                                    value={formData.middleName}
+                                    onChange={handleInputChange}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-row">
+                            <div className="form-group">
                                 <label>Last Name *</label>
-                                <input 
+                                <input
                                     type="text"
                                     name="lastName"
                                     value={formData.lastName}
@@ -144,12 +180,21 @@ const Checkout = () => {
                                     required
                                 />
                             </div>
+                            <div className="form-group">
+                                <label>Suffix (Optional)</label>
+                                <input
+                                    type="text"
+                                    name="suffix"
+                                    value={formData.suffix}
+                                    onChange={handleInputChange}
+                                />
+                            </div>
                         </div>
 
                         <div className="form-row">
                             <div className="form-group">
                                 <label>Email *</label>
-                                <input 
+                                <input
                                     type="email"
                                     name="email"
                                     value={formData.email}
@@ -158,52 +203,60 @@ const Checkout = () => {
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Phone Number</label>
-                                <input 
+                                <label>Phone Number *</label>
+                                <input
                                     type="tel"
                                     name="phone"
                                     value={formData.phone}
                                     onChange={handleInputChange}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="form-group full">
-                            <label>Address *</label>
-                            <input 
-                                type="text"
-                                name="address"
-                                value={formData.address}
-                                onChange={handleInputChange}
-                                required
-                            />
-                        </div>
-
-                        <div className="form-row">
-                            <div className="form-group">
-                                <label>City *</label>
-                                <input 
-                                    type="text"
-                                    name="city"
-                                    value={formData.city}
-                                    onChange={handleInputChange}
                                     required
-                                />
-                            </div>
-                            <div className="form-group">
-                                <label>Postal Code</label>
-                                <input 
-                                    type="text"
-                                    name="postalCode"
-                                    value={formData.postalCode}
-                                    onChange={handleInputChange}
                                 />
                             </div>
                         </div>
                     </section>
 
-                    {/* Payment Method Notice */}
-                    <section className="form-section">
+                    <section className="order-summary order-summary-inline">
+                        <h2>Order Summary</h2>
+
+                        <div className="summary-items">
+                            {cartItems.map((item, idx) => (
+                                <div key={idx} className="summary-item">
+                                    <div className="item-info">
+                                        <span className="item-name">{item.name}</span>
+                                        <span className="item-qty">Qty: {item.quantity}</span>
+                                    </div>
+                                    <span className="item-total">₱{(item.price * item.quantity).toFixed(2)}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="summary-breakdown">
+                            <div className="breakdown-row">
+                                <span>Subtotal:</span>
+                                <span>₱{subtotal.toFixed(2)}</span>
+                            </div>
+                            {discountRate > 0 && (
+                                <div className="breakdown-row discount">
+                                    <span>Discount ({(discountRate * 100).toFixed(0)}%):</span>
+                                    <span>-₱{discountAmount.toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="breakdown-row">
+                                <span>Discounted Subtotal:</span>
+                                <span>₱{discountedSubtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="breakdown-row">
+                                <span>Shipping:</span>
+                                <span>{shippingFee === 0 ? 'FREE' : `₱${shippingFee.toFixed(2)}`}</span>
+                            </div>
+                            <div className="breakdown-row total">
+                                <span>Total:</span>
+                                <span>₱{total.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="form-section payment-section">
                         <h2>Payment Method</h2>
                         <div className="payment-notice">
                             <p><strong>Store Payment Only:</strong> Payment is completed at the physical store.</p>
@@ -211,60 +264,14 @@ const Checkout = () => {
                         </div>
                     </section>
 
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         className="btn-place-order"
                         disabled={loading}
                     >
                         {loading ? 'Processing...' : 'Place Order'}
                     </button>
                 </form>
-
-                {/* Order Summary */}
-                <aside className="order-summary">
-                    <h2>Order Summary</h2>
-
-                    <div className="summary-items">
-                        {cartItems.map((item, idx) => (
-                            <div key={idx} className="summary-item">
-                                <div className="item-info">
-                                    <span className="item-name">{item.name}</span>
-                                    <span className="item-qty">Qty: {item.quantity}</span>
-                                </div>
-                                <span className="item-total">₱{(item.price * item.quantity).toFixed(2)}</span>
-                            </div>
-                        ))}
-                    </div>
-
-                    <div className="summary-breakdown">
-                        <div className="breakdown-row">
-                            <span>Subtotal:</span>
-                            <span>₱{subtotal.toFixed(2)}</span>
-                        </div>
-                        {discountRate > 0 && (
-                            <div className="breakdown-row discount">
-                                <span>Discount ({(discountRate * 100).toFixed(0)}%):</span>
-                                <span>-₱{discountAmount.toFixed(2)}</span>
-                            </div>
-                        )}
-                        <div className="breakdown-row">
-                            <span>Discounted Subtotal:</span>
-                            <span>₱{discountedSubtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="breakdown-row">
-                            <span>Shipping:</span>
-                            <span>{shippingFee === 0 ? 'FREE' : `₱${shippingFee.toFixed(2)}`}</span>
-                        </div>
-                        <div className="breakdown-row">
-                            <span>Tax:</span>
-                            <span>₱{tax.toFixed(2)}</span>
-                        </div>
-                        <div className="breakdown-row total">
-                            <span>Total:</span>
-                            <span>₱{total.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </aside>
             </div>
         </div>
     );

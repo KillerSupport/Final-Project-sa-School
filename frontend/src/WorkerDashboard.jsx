@@ -40,6 +40,9 @@ const WorkerDashboard = () => {
     const [salesSearch, setSalesSearch] = useState('');
     const [salesDateFilter, setSalesDateFilter] = useState('all');
     const [salesView, setSalesView] = useState('history');
+    const [showSalesOrderModal, setShowSalesOrderModal] = useState(false);
+    const [selectedSalesOrderDetails, setSelectedSalesOrderDetails] = useState(null);
+    const [salesOrderDetailsLoading, setSalesOrderDetailsLoading] = useState(false);
 
     // Sales Reports state
     const [reportPeriod, setReportPeriod] = useState('today');
@@ -97,12 +100,39 @@ const WorkerDashboard = () => {
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     
     const user = JSON.parse(localStorage.getItem('user') || 'null');
-    const userId = user?.user_id;
+    const userId = user?.user_id || user?.userId || user?.id;
     const userRole = user?.role_name || 'Worker';
     const workerName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Worker';
     const profileImageStorageKey = userId ? `workerProfileImage:${userId}` : 'workerProfileImage';
     const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
     const [profileImageFile, setProfileImageFile] = useState(null);
+
+    const buildWorkerAuthConfig = (extraParams = {}) => {
+        const params = userId ? { userId, ...extraParams } : { ...extraParams };
+        const headers = userId ? { 'x-user-id': String(userId) } : {};
+        return { params, headers };
+    };
+
+    const buildWorkerWriteConfig = () => ({
+        headers: userId ? { 'x-user-id': String(userId) } : {}
+    });
+
+    const withWorkerIdentity = (payload = {}) => (
+        userId ? { ...payload, userId } : { ...payload }
+    );
+
+    const normalizeOrderRecord = (order) => {
+        const normalizedStatus = String(order?.order_status || order?.status || 'pending').toLowerCase();
+
+        return {
+            ...order,
+            order_id: order?.order_id ?? order?.id,
+            order_status: normalizedStatus === 'processing' ? 'pending' : normalizedStatus,
+            order_total: Number(order?.order_total ?? order?.total_amount ?? 0),
+            order_date: order?.order_date || order?.created_at || order?.updated_at || null,
+            customer_name: order?.customer_name || order?.customer || 'Unknown Customer'
+        };
+    };
 
     useEffect(() => {
         localStorage.setItem('workerActiveTab', activeTab);
@@ -116,6 +146,20 @@ const WorkerDashboard = () => {
         fetchCashRegisterData();
         fetchTransactionLog();
     }, []);
+    useEffect(() => {
+        if (activeTab === 'orders') {
+            fetchOrders();
+        }
+        if (activeTab === 'cash-register') {
+            fetchCashRegisterData();
+        }
+        if (activeTab === 'transaction-log') {
+            fetchTransactionLog();
+        }
+        if (activeTab === 'sales') {
+            fetchSalesHistory();
+        }
+    }, [activeTab]);
 
     useEffect(() => {
         if (activeTab === 'sales' && salesView === 'reports') {
@@ -158,27 +202,66 @@ const WorkerDashboard = () => {
     };
 
     const fetchOrders = async () => {
+        if (!userId) {
+            setOrders([]);
+            return;
+        }
+
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/orders?userId=${userId}`);
-            setOrders(res.data.orders || res.data || []);
+            const res = await axios.get('http://localhost:5000/api/worker/orders', buildWorkerAuthConfig());
+            const orderRows = Array.isArray(res.data?.orders)
+                ? res.data.orders
+                : (Array.isArray(res.data) ? res.data : []);
+            setOrders(orderRows.map(normalizeOrderRecord));
         } catch (err) {
             setOrders([]);
         }
     };
 
     const fetchSalesHistory = async () => {
+        if (!userId) {
+            setSalesHistory([]);
+            return;
+        }
+
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/sales-history?userId=${userId}`);
+            const res = await axios.get('http://localhost:5000/api/worker/sales-history', buildWorkerAuthConfig());
             setSalesHistory(res.data.salesHistory || res.data || []);
         } catch (err) {
             setSalesHistory([]);
         }
     };
 
+    const handleViewSalesOrderDetails = async (orderId) => {
+        if (!userId) {
+            Swal.fire('Error', 'User session not found. Please login again.', 'error');
+            return;
+        }
+
+        setSalesOrderDetailsLoading(true);
+        try {
+            const res = await axios.get(`http://localhost:5000/api/worker/sales-history/${orderId}/details`, buildWorkerAuthConfig());
+            setSelectedSalesOrderDetails(res.data || null);
+            setShowSalesOrderModal(true);
+        } catch (err) {
+            Swal.fire('Error', err.response?.data?.message || 'Failed to load sales order details', 'error');
+        } finally {
+            setSalesOrderDetailsLoading(false);
+        }
+    };
+
     const fetchSalesReport = async (period) => {
+        if (!userId) {
+            setTotalSales(0);
+            setTotalOrders(0);
+            setAvgOrderValue(0);
+            setTopProducts([]);
+            return;
+        }
+
         setReportLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/reports?period=${period}&userId=${userId}`);
+            const res = await axios.get('http://localhost:5000/api/worker/reports', buildWorkerAuthConfig({ period }));
             setTotalSales(res.data.totalSales || 0);
             setTotalOrders(res.data.totalOrders || 0);
             setAvgOrderValue(res.data.avgOrderValue || 0);
@@ -194,9 +277,23 @@ const WorkerDashboard = () => {
     };
 
     const fetchCashRegisterData = async () => {
+        if (!userId) {
+            setCashRegisterData({
+                totalCash: 0,
+                totalCard: 0,
+                expectedCash: 0,
+                actualCash: 0,
+                discrepancy: 0,
+                transactionCount: 0
+            });
+            setDailyTransactions([]);
+            setCashierInvoiceQueue([]);
+            return;
+        }
+
         setCashRegisterLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/cash-register?userId=${userId}`);
+            const res = await axios.get('http://localhost:5000/api/worker/cash-register', buildWorkerAuthConfig());
             setCashRegisterData(res.data.summary || {
                 totalCash: 0,
                 totalCard: 0,
@@ -224,9 +321,14 @@ const WorkerDashboard = () => {
     };
 
     const fetchTransactionLog = async () => {
+        if (!userId) {
+            setTransactionLog([]);
+            return;
+        }
+
         setTransactionLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/transaction-log?userId=${userId}`);
+            const res = await axios.get('http://localhost:5000/api/worker/transaction-log', buildWorkerAuthConfig());
             setTransactionLog(res.data || []);
         } catch (err) {
             setTransactionLog([]);
@@ -265,15 +367,21 @@ const WorkerDashboard = () => {
         if (!selectedOrder) return;
         setOrderProcessing(true);
         try {
-            await axios.put(`http://localhost:5000/api/worker/orders/${selectedOrder.order_id}`, {
-                status: status,
-                userId: userId
-            });
+            await axios.put(
+                `http://localhost:5000/api/worker/orders/${selectedOrder.order_id}`,
+                withWorkerIdentity({ status: status }),
+                buildWorkerWriteConfig()
+            );
             Swal.fire('Success', `Order ${status} successfully`, 'success');
             setShowOrderModal(false);
             setSelectedOrder(null);
             fetchOrders();
             fetchSalesHistory();
+            if (status === 'pending') {
+                setActiveTab('cash-register');
+                setCashierFilters({ search: String(selectedOrder.order_id) });
+                fetchCashRegisterData();
+            }
         } catch (err) {
             Swal.fire('Error', err.response?.data?.message || 'Failed to process order', 'error');
         } finally {
@@ -321,12 +429,11 @@ const WorkerDashboard = () => {
 
         setCashRegisterLoading(true);
         try {
-            await axios.post(`http://localhost:5000/api/worker/cash-register/entry`, {
+            await axios.post(`http://localhost:5000/api/worker/cash-register/entry`, withWorkerIdentity({
                 amount: parseFloat(manualEntry.amount),
                 type: manualEntry.type,
-                description: manualEntry.description,
-                userId: userId
-            });
+                description: manualEntry.description
+            }), buildWorkerWriteConfig());
             Swal.fire('Success', 'Cash entry recorded successfully', 'success');
             setShowCashModal(false);
             setManualEntry({ amount: '', type: 'cash', description: '' });
@@ -350,10 +457,11 @@ const WorkerDashboard = () => {
         if (actualAmount) {
             setCashRegisterLoading(true);
             try {
-                await axios.put(`http://localhost:5000/api/worker/cash-register/reconcile`, {
-                    actualCash: parseFloat(actualAmount),
-                    userId: userId
-                });
+                await axios.put(
+                    `http://localhost:5000/api/worker/cash-register/reconcile`,
+                    withWorkerIdentity({ actualCash: parseFloat(actualAmount) }),
+                    buildWorkerWriteConfig()
+                );
                 Swal.fire('Success', 'Cash reconciliation updated', 'success');
                 fetchCashRegisterData();
             } catch (err) {
@@ -365,9 +473,14 @@ const WorkerDashboard = () => {
     };
 
     const handleViewCashierOrderDetails = async (orderId) => {
+        if (!userId) {
+            Swal.fire('Error', 'User session not found. Please login again.', 'error');
+            return;
+        }
+
         setCashierActionLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/worker/cash-register/order/${orderId}/details?userId=${userId}`);
+            const res = await axios.get(`http://localhost:5000/api/worker/cash-register/order/${orderId}/details`, buildWorkerAuthConfig());
             setSelectedCashierOrderDetails(res.data || null);
             setShowCashierOrderModal(true);
         } catch (err) {
@@ -409,12 +522,11 @@ const WorkerDashboard = () => {
 
         setCashRegisterLoading(true);
         try {
-            await axios.put(`http://localhost:5000/api/worker/cash-register/order/${order.order_id}/status`, {
+            await axios.put(`http://localhost:5000/api/worker/cash-register/order/${order.order_id}/status`, withWorkerIdentity({
                 status: 'paid',
                 paymentMethod: formValues.paymentMethod,
-                notes: formValues.notes,
-                userId
-            });
+                notes: formValues.notes
+            }), buildWorkerWriteConfig());
 
             Swal.fire('Success', 'Order marked as paid', 'success');
             fetchCashRegisterData();
@@ -440,10 +552,11 @@ const WorkerDashboard = () => {
 
         setCashRegisterLoading(true);
         try {
-            await axios.put(`http://localhost:5000/api/worker/cash-register/order/${order.order_id}/status`, {
-                status: 'cancelled',
-                userId
-            });
+            await axios.put(
+                `http://localhost:5000/api/worker/cash-register/order/${order.order_id}/status`,
+                withWorkerIdentity({ status: 'cancelled' }),
+                buildWorkerWriteConfig()
+            );
             Swal.fire('Success', 'Order marked as cancelled', 'success');
             fetchCashRegisterData();
             fetchOrders();
@@ -453,6 +566,10 @@ const WorkerDashboard = () => {
         } finally {
             setCashRegisterLoading(false);
         }
+    };
+
+    const handleCashierRowClick = (order) => {
+        handleViewCashierOrderDetails(order.order_id);
     };
 
     const handleCreateWalkInOrder = async () => {
@@ -472,7 +589,7 @@ const WorkerDashboard = () => {
 
         setManualOrderLoading(true);
         try {
-            await axios.post('http://localhost:5000/api/worker/cash-register/manual-order', {
+            await axios.post('http://localhost:5000/api/worker/cash-register/manual-order', withWorkerIdentity({
                 customer_name: customer_name.trim(),
                 email: manualOrderFormData.email || null,
                 contact_number: manualOrderFormData.contact_number || null,
@@ -485,9 +602,8 @@ const WorkerDashboard = () => {
                     product_name: item.product_name,
                     quantity: item.quantity,
                     price: item.price
-                })),
-                userId: userId
-            });
+                }))
+            }), buildWorkerWriteConfig());
             Swal.fire('Success', 'Walk-in order created and marked as paid', 'success');
             setShowManualOrderModal(false);
             setManualOrderFormData({ customer_name: '', email: '', contact_number: '', discount_type: 'regular' });
@@ -512,10 +628,11 @@ const WorkerDashboard = () => {
 
     const handleUpdateInvoiceStatus = async (orderId, status) => {
         try {
-            await axios.put(`http://localhost:5000/api/worker/invoice/${orderId}/status`, {
-                status,
-                userId
-            });
+            await axios.put(
+                `http://localhost:5000/api/worker/invoice/${orderId}/status`,
+                withWorkerIdentity({ status }),
+                buildWorkerWriteConfig()
+            );
             Swal.fire('Success', `Invoice marked as ${status}`, 'success');
             fetchCashRegisterData();
             fetchOrders();
@@ -527,10 +644,11 @@ const WorkerDashboard = () => {
 
     const handleSendInvoiceEmail = async (orderId) => {
         try {
-            await axios.post('http://localhost:5000/api/worker/send-invoice-email', {
-                order_id: orderId,
-                userId: userId
-            });
+            await axios.post(
+                'http://localhost:5000/api/worker/send-invoice-email',
+                withWorkerIdentity({ order_id: orderId }),
+                buildWorkerWriteConfig()
+            );
             Swal.fire('Success', 'Invoice email sent successfully', 'success');
             fetchTransactionLog();
         } catch (err) {
@@ -552,11 +670,10 @@ const WorkerDashboard = () => {
 
         setLoading(true);
         try {
-            await axios.put(`http://localhost:5000/api/products/${editingId}/stock`, {
+            await axios.put(`http://localhost:5000/api/products/${editingId}/stock`, withWorkerIdentity({
                 stock: parseInt(formData.stock),
-                lowStockThreshold: 20,
-                userId: userId
-            });
+                lowStockThreshold: 20
+            }), buildWorkerWriteConfig());
 
             Swal.fire('Success', 'Stock updated successfully', 'success');
             setShowModal(false);
@@ -1062,7 +1179,6 @@ const WorkerDashboard = () => {
                                 className="products-sort-select"
                             >
                                 <option value="pending">Pending</option>
-                                <option value="processing">Processing</option>
                                 <option value="completed">Completed</option>
                                 <option value="cancelled">Cancelled</option>
                                 <option value="all">All Orders</option>
@@ -1148,33 +1264,33 @@ const WorkerDashboard = () => {
                                 ).length === 0 ? (
                                     <p className="no-products-text">No sales records found</p>
                                 ) : (
-                                    <div className="sales-table-wrapper">
-                                        <table className="sales-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>Order ID</th>
-                                                    <th>Customer</th>
-                                                    <th>Date</th>
-                                                    <th>Amount</th>
-                                                    <th>Payment Method</th>
-                                                    <th>Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {salesHistory.filter(s =>
-                                                    s.order_id?.toString().includes(salesSearch) || s.customer_name?.toLowerCase().includes(salesSearch.toLowerCase())
-                                                ).map((sale) => (
-                                                    <tr key={sale.order_id}>
-                                                        <td>#{sale.order_id}</td>
-                                                        <td>{sale.customer_name}</td>
-                                                        <td>{new Date(sale.order_date).toLocaleDateString()}</td>
-                                                        <td>₱{parseFloat(sale.order_total).toFixed(2)}</td>
-                                                        <td>{sale.payment_method}</td>
-                                                        <td><span className={`order-status ${sale.order_status}`}>{sale.order_status}</span></td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                    <div className="sales-history-list">
+                                        {salesHistory.filter(s =>
+                                            s.order_id?.toString().includes(salesSearch) || s.customer_name?.toLowerCase().includes(salesSearch.toLowerCase())
+                                        ).map((sale) => (
+                                            <button
+                                                key={sale.order_id}
+                                                type="button"
+                                                className="sales-history-card"
+                                                onClick={() => handleViewSalesOrderDetails(sale.order_id)}
+                                            >
+                                                <div className="sales-history-main">
+                                                    <div className="sales-history-top">
+                                                        <div>
+                                                            <div className="sales-history-order">Order #{sale.order_id}</div>
+                                                            <div className="sales-history-customer">{sale.customer_name}</div>
+                                                        </div>
+                                                        <span className={`order-status ${sale.order_status}`}>{sale.order_status}</span>
+                                                    </div>
+                                                    <div className="sales-history-meta">
+                                                        <span>{new Date(sale.order_date).toLocaleString()}</span>
+                                                        <span>{sale.payment_method}</span>
+                                                        <span>₱{parseFloat(sale.order_total).toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="sales-history-arrow">View details</div>
+                                            </button>
+                                        ))}
                                     </div>
                                 )}
                             </>
@@ -1248,7 +1364,7 @@ const WorkerDashboard = () => {
                                 <div className="cash-register-top-row">
                                     <div className="cash-register-queue-panel">
                                         <div className="cash-transactions">
-                                            <h4>Pending Orders Queue</h4>
+                                            <h4>Pending / Processing Orders Queue</h4>
                                             <button
                                                 onClick={() => setShowManualOrderModal(true)}
                                                 className="action-button add-button"
@@ -1280,12 +1396,15 @@ const WorkerDashboard = () => {
                                                                 <th>Date & Time</th>
                                                                 <th>Total Amount</th>
                                                                 <th>Status</th>
-                                                                <th>Actions</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
                                                             {filteredCashierOrders.map((order) => (
-                                                                <tr key={`cashier-${order.order_id}`}>
+                                                                <tr
+                                                                    key={`cashier-${order.order_id}`}
+                                                                    className="cashier-order-row"
+                                                                    onClick={() => handleCashierRowClick(order)}
+                                                                >
                                                                     <td>#{order.order_id}</td>
                                                                     <td>{order.customer_name}</td>
                                                                     <td>{order.email || '-'}</td>
@@ -1294,32 +1413,6 @@ const WorkerDashboard = () => {
                                                                     <td>₱{parseFloat(order.total_amount || 0).toFixed(2)}</td>
                                                                     <td>
                                                                         <span className="order-status pending">Pending</span>
-                                                                    </td>
-                                                                    <td>
-                                                                        <div className="cashier-table-actions">
-                                                                            <button
-                                                                                className="action-button add-button small"
-                                                                                onClick={() => handleViewCashierOrderDetails(order.order_id)}
-                                                                                disabled={cashierActionLoading}
-                                                                            >
-                                                                                View
-                                                                            </button>
-                                                                            <button
-                                                                                className="action-button add-button small"
-                                                                                onClick={() => handleConfirmCashierPayment(order)}
-                                                                                disabled={cashierActionLoading || !order.has_invoice}
-                                                                                title={!order.has_invoice ? 'Generate invoice first' : 'Mark as paid'}
-                                                                            >
-                                                                                Mark Paid
-                                                                            </button>
-                                                                            <button
-                                                                                className="action-button add-button small"
-                                                                                onClick={() => handleMarkCashierOrderCancelled(order)}
-                                                                                disabled={cashierActionLoading}
-                                                                            >
-                                                                                Mark Cancelled
-                                                                            </button>
-                                                                        </div>
                                                                     </td>
                                                                 </tr>
                                                             ))}
@@ -1383,31 +1476,25 @@ const WorkerDashboard = () => {
                             onChange={(e) => setTransactionSearch(e.target.value)}
                             className="products-search-input"
                         />
-                        <select
-                            value={transactionTypeFilter}
-                            onChange={(e) => setTransactionTypeFilter(e.target.value)}
-                            className="products-sort-select"
-                        >
-                            <option value="all">All Types</option>
-                            <option value="order">Order</option>
-                            <option value="invoice">Invoice</option>
-                            <option value="payment">Payment</option>
-                            <option value="email">Email Sent</option>
-                        </select>
+                        <div className="transaction-only-chip">Invoices only</div>
                     </div>
 
                     {transactionLoading ? (
                         <div className="loading">Loading transaction log...</div>
-                    ) : transactionLog.length === 0 ? (
+                    ) : transactionLog.filter(tx => tx.transaction_type === 'invoice' && (
+                        tx.customer_name?.toLowerCase().includes(transactionSearch.toLowerCase()) ||
+                        tx.order_id?.toString().includes(transactionSearch) ||
+                        tx.description?.toLowerCase().includes(transactionSearch.toLowerCase())
+                    )).length === 0 ? (
                         <div className="no-data">No transactions recorded</div>
                     ) : (
                         <div className="transaction-list">
                             {transactionLog
+                                .filter(tx => tx.transaction_type === 'invoice')
                                 .filter(tx =>
-                                    (transactionTypeFilter === 'all' || tx.transaction_type === transactionTypeFilter) &&
-                                    (tx.customer_name?.toLowerCase().includes(transactionSearch.toLowerCase()) ||
+                                    tx.customer_name?.toLowerCase().includes(transactionSearch.toLowerCase()) ||
                                     tx.order_id?.toString().includes(transactionSearch) ||
-                                    tx.description?.toLowerCase().includes(transactionSearch.toLowerCase()))
+                                    tx.description?.toLowerCase().includes(transactionSearch.toLowerCase())
                                 )
                                 .map(tx => (
                                     <div key={tx.transaction_id} className="transaction-log-item">
@@ -1495,20 +1582,11 @@ const WorkerDashboard = () => {
                             </button>
                             {selectedOrder.order_status === 'pending' && (
                                 <button
-                                    onClick={() => handleProcessOrder('processing')}
+                                    onClick={() => handleProcessOrder('pending')}
                                     className="save-button"
                                     disabled={orderProcessing}
                                 >
-                                    {orderProcessing ? 'Processing...' : 'Start Processing'}
-                                </button>
-                            )}
-                            {selectedOrder.order_status === 'processing' && (
-                                <button
-                                    onClick={() => handleProcessOrder('completed')}
-                                    className="save-button"
-                                    disabled={orderProcessing}
-                                >
-                                    {orderProcessing ? 'Completing...' : 'Mark as Completed'}
+                                    {orderProcessing ? 'Opening...' : 'Go to Cash Register'}
                                 </button>
                             )}
                         </div>
@@ -1527,6 +1605,7 @@ const WorkerDashboard = () => {
                             <p><strong>Customer:</strong> {selectedCashierOrderDetails.order?.customer_name}</p>
                             <p><strong>Email:</strong> {selectedCashierOrderDetails.order?.email || '-'}</p>
                             <p><strong>Contact Number:</strong> {selectedCashierOrderDetails.order?.contact_number || '-'}</p>
+                            <p><strong>Invoice Number:</strong> {selectedCashierOrderDetails.order?.invoice_number || '-'}</p>
                             <p><strong>Date & Time:</strong> {selectedCashierOrderDetails.order?.created_at ? new Date(selectedCashierOrderDetails.order.created_at).toLocaleString() : '-'}</p>
                             <p><strong>Status:</strong> {selectedCashierOrderDetails.order?.status || '-'}</p>
                         </div>
@@ -1566,6 +1645,21 @@ const WorkerDashboard = () => {
                                 className="cancel-button"
                             >
                                 Close
+                            </button>
+                            <button
+                                onClick={() => handleConfirmCashierPayment(selectedCashierOrderDetails.order)}
+                                className="save-button"
+                                disabled={cashierActionLoading || !(selectedCashierOrderDetails.order?.invoice_id || selectedCashierOrderDetails.order?.has_invoice || selectedCashierOrderDetails.order?.invoice_number)}
+                                title={!(selectedCashierOrderDetails.order?.invoice_id || selectedCashierOrderDetails.order?.has_invoice || selectedCashierOrderDetails.order?.invoice_number) ? 'Generate invoice first' : 'Mark as paid'}
+                            >
+                                Mark Paid
+                            </button>
+                            <button
+                                onClick={() => handleMarkCashierOrderCancelled(selectedCashierOrderDetails.order)}
+                                className="cancel-button"
+                                disabled={cashierActionLoading}
+                            >
+                                Mark Canceled
                             </button>
                         </div>
                     </div>
@@ -1815,6 +1909,123 @@ const WorkerDashboard = () => {
                                 disabled={manualOrderLoading}
                             >
                                 {manualOrderLoading ? 'Creating...' : 'Create & Mark Paid'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Sales History Detail Modal */}
+            {showSalesOrderModal && selectedSalesOrderDetails && (
+                <div className="modal-overlay" onClick={() => setShowSalesOrderModal(false)}>
+                    <div className="modal-content sales-detail-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Sales Order Details</h3>
+
+                        <div className="sales-detail-grid">
+                            <div className="detail-group">
+                                <span className="detail-label">Order ID</span>
+                                <span className="detail-value">#{selectedSalesOrderDetails.order?.order_id}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Customer</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.order?.customer_name || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Email</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.order?.email || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Contact Number</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.order?.contact_number || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Invoice Number</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.invoice?.invoice_number || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Prepared By</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.invoice?.issued_by_name || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Paid By</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.order?.paid_by_name || '-'}</span>
+                            </div>
+                            <div className="detail-group">
+                                <span className="detail-label">Email Sent To</span>
+                                <span className="detail-value">{selectedSalesOrderDetails.order?.email || '-'}</span>
+                            </div>
+                        </div>
+
+                        <div className="sales-detail-meta">
+                            <p><strong>Status:</strong> {selectedSalesOrderDetails.order?.status || '-'}</p>
+                            <p><strong>Payment Method:</strong> {selectedSalesOrderDetails.order?.payment_method || '-'}</p>
+                            <p><strong>Placed:</strong> {selectedSalesOrderDetails.order?.created_at ? new Date(selectedSalesOrderDetails.order.created_at).toLocaleString() : '-'}</p>
+                            <p><strong>Updated:</strong> {selectedSalesOrderDetails.order?.updated_at ? new Date(selectedSalesOrderDetails.order.updated_at).toLocaleString() : '-'}</p>
+                        </div>
+
+                        <div className="sales-detail-actions">
+                            {selectedSalesOrderDetails.invoice?.invoice_pdf_path ? (
+                                <button
+                                    type="button"
+                                    className="save-button"
+                                    onClick={() => window.open(`http://localhost:5000${selectedSalesOrderDetails.invoice.invoice_pdf_path}`, '_blank', 'noopener,noreferrer')}
+                                >
+                                    Open Invoice PDF
+                                </button>
+                            ) : selectedSalesOrderDetails.order?.order_id ? (
+                                <button
+                                    type="button"
+                                    className="save-button"
+                                    onClick={() => window.open(`http://localhost:5000/api/orders/${selectedSalesOrderDetails.order.order_id}/invoice-pdf?userId=${userId}`, '_blank', 'noopener,noreferrer')}
+                                >
+                                    Open Invoice PDF
+                                </button>
+                            ) : null}
+                        </div>
+
+                        <div className="sales-detail-section">
+                            <h4>Order Items</h4>
+                            <div className="sales-detail-items">
+                                {(selectedSalesOrderDetails.items || []).map((item) => (
+                                    <div key={item.order_item_id} className="sales-detail-item">
+                                        <img src={item.image_url || 'https://via.placeholder.com/72'} alt={item.product_name} />
+                                        <div className="sales-detail-item-meta">
+                                            <strong>{item.product_name}</strong>
+                                            <span>Qty: {item.quantity}</span>
+                                            <span>Unit: ₱{parseFloat(item.price || 0).toFixed(2)}</span>
+                                            <span>Line Total: ₱{parseFloat(item.line_total || 0).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="sales-detail-summary">
+                            <p><strong>Subtotal:</strong> ₱{parseFloat(selectedSalesOrderDetails.summary?.subtotal || 0).toFixed(2)}</p>
+                            <p><strong>Discount:</strong> -₱{parseFloat(selectedSalesOrderDetails.summary?.discount || 0).toFixed(2)}</p>
+                            <p><strong>Total:</strong> ₱{parseFloat(selectedSalesOrderDetails.summary?.total || 0).toFixed(2)}</p>
+                        </div>
+
+                        <div className="sales-detail-section">
+                            <h4>Email Log</h4>
+                            {(selectedSalesOrderDetails.email_history || []).length === 0 ? (
+                                <p className="no-products-text">No email requests recorded.</p>
+                            ) : (
+                                <div className="sales-email-log">
+                                    {(selectedSalesOrderDetails.email_history || []).map((entry) => (
+                                        <div key={entry.request_id} className="sales-email-row">
+                                            <span>{entry.email_sent ? 'Sent' : 'Pending'}</span>
+                                            <span>{entry.requested_by_name}</span>
+                                            <span>{new Date(entry.request_time).toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="modal-buttons">
+                            <button type="button" className="cancel-button" onClick={() => setShowSalesOrderModal(false)}>
+                                Close
                             </button>
                         </div>
                     </div>

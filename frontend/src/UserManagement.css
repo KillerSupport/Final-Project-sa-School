@@ -44,6 +44,31 @@
     transition: all 0.3s ease;
 }
 
+.tab-button-with-badge {
+    position: relative;
+    padding-right: 34px;
+}
+
+.tab-alert-badge {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #fff;
+    box-shadow: 0 4px 10px rgba(239, 68, 68, 0.35);
+    line-height: 1;
+}
+
 .tab-button:hover {
     color: #2563eb;
     background: #f9fafb;
@@ -214,6 +239,10 @@
     background: #f9fafb;
 }
 
+.clickable-row {
+    cursor: pointer;
+}
+
 .col-name {
     color: #333;
     font-weight: 500;
@@ -381,6 +410,28 @@
     text-transform: uppercase;
 }
 
+.discount-admin-section {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    background: #f8fafc;
+}
+
+.discount-admin-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.discount-remove-btn {
+    width: auto;
+    height: auto;
+    padding: 10px 14px;
+    min-width: 180px;
+}
+
 /* Request Badge */
 .request-badge {
     display: inline-block;
@@ -422,6 +473,52 @@
     max-width: 500px;
     width: 100%;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.user-details-modal {
+    max-width: 760px;
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+.user-details-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.user-details-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    color: #1f2937;
+    font-size: 14px;
+}
+
+.id-proof-section {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+}
+
+.user-details-content .id-proof-section:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+.id-proof-section h4 {
+    margin: 0 0 8px;
+    color: #111827;
+}
+
+.id-proof-link {
+    display: inline-block;
+}
+
+.id-proof-image {
+    width: min(100%, 380px);
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .modal-header {

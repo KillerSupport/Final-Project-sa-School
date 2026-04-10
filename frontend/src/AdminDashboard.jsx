@@ -32,6 +32,7 @@ const AdminDashboard = () => {
     const [logsLoading, setLogsLoading] = useState(false);
     const [lowStockProducts, setLowStockProducts] = useState([]);
     const [cancellationRequests, setCancellationRequests] = useState([]);
+    const [verificationRequestCount, setVerificationRequestCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [restoreMode, setRestoreMode] = useState(false);
@@ -484,6 +485,13 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         fetchLowStockProducts();
+        fetchVerificationRequestCount();
+
+        const intervalId = setInterval(() => {
+            fetchVerificationRequestCount();
+        }, 15000);
+
+        return () => clearInterval(intervalId);
     }, []);
 
     useEffect(() => {
@@ -502,6 +510,18 @@ const AdminDashboard = () => {
             Swal.fire('Error', 'Failed to fetch cancellation requests', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchVerificationRequestCount = async () => {
+        if (!userId) return;
+        try {
+            const response = await axios.get('http://localhost:5000/api/admin/verification-requests', {
+                params: { userId }
+            });
+            setVerificationRequestCount(Array.isArray(response.data) ? response.data.length : 0);
+        } catch {
+            setVerificationRequestCount(0);
         }
     };
 
@@ -759,10 +779,25 @@ const AdminDashboard = () => {
         });
     };
 
+    const getOrderStatusLabel = (status) => {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized === 'completed' || normalized === 'paid') return 'Paid';
+        if (normalized === 'cancelled') return 'Canceled';
+        return 'Pending';
+    };
+
+    const getOrderStatusValue = (status) => {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized === 'completed' || normalized === 'paid') return 'paid';
+        if (normalized === 'cancelled') return 'cancelled';
+        return 'pending';
+    };
+
     const updateOrderStatus = async (orderId, newStatus) => {
+        const backendStatus = newStatus === 'paid' ? 'completed' : (newStatus === 'processing' ? 'pending' : newStatus);
         try {
             await axios.put(`http://localhost:5000/api/orders/${orderId}`, {
-                status: newStatus
+                status: backendStatus
             });
             Swal.fire({
                 title: 'Updated!',
@@ -958,7 +993,12 @@ const AdminDashboard = () => {
                 <button className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Order Management</button>
                 <button className={`tab-button ${activeTab === 'cancellations' ? 'active' : ''}`} onClick={() => setActiveTab('cancellations')}>Cancellation Requests</button>
                 <button className={`tab-button ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics & Reports</button>
-                <button className={`tab-button ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>User Management</button>
+                <button className={`tab-button tab-button-with-badge ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
+                    User Management
+                    {verificationRequestCount > 0 && (
+                        <span className="tab-alert-badge">{verificationRequestCount > 99 ? '99+' : verificationRequestCount}</span>
+                    )}
+                </button>
             </div>
 
             {/* Modern Dashboard Cards (Figma-inspired) */}
@@ -1400,22 +1440,20 @@ const AdminDashboard = () => {
                                         </td>
                                         <td>₱{order.total_amount.toFixed(2)}</td>
                                         <td>
-                                            <span className={`status-badge status-${order.status}`}>
-                                                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                            <span className={`status-badge status-${getOrderStatusValue(order.status)}`}>
+                                                {getOrderStatusLabel(order.status)}
                                             </span>
                                         </td>
                                         <td>{new Date(order.created_at).toLocaleDateString()}</td>
                                         <td>
                                             <select
-                                                value={order.status}
+                                                value={getOrderStatusValue(order.status)}
                                                 onChange={(e) => updateOrderStatus(order.order_id, e.target.value)}
                                                 className="status-select"
                                             >
                                                 <option value="pending">Pending</option>
-                                                <option value="processing">Processing</option>
-                                                <option value="shipped">Shipped</option>
-                                                <option value="delivered">Delivered</option>
-                                                <option value="cancelled">Cancelled</option>
+                                                <option value="paid">Paid</option>
+                                                <option value="cancelled">Canceled</option>
                                             </select>
                                         </td>
                                     </tr>
@@ -1625,7 +1663,7 @@ const AdminDashboard = () => {
             {/* Users Tab */}
             {activeTab === 'users' && (
                 <div className="admin-content">
-                    <UserManagement />
+                    <UserManagement onVerificationCountChange={setVerificationRequestCount} />
                 </div>
             )}
         </div>

@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import { Search, Edit2, CheckCircle, XCircle, Users, ShieldCheck } from 'lucide-react';
 import './UserManagement.css';
 
-const UserManagement = () => {
+const UserManagement = ({ onVerificationCountChange }) => {
     const [users, setUsers] = useState([]);
     const [verificationRequests, setVerificationRequests] = useState([]);
     const [roles, setRoles] = useState([]);
@@ -15,8 +15,13 @@ const UserManagement = () => {
     const [editingUserId, setEditingUserId] = useState(null);
     const [selectedRole, setSelectedRole] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const [selectedUserForEdit, setSelectedUserForEdit] = useState(null);
+    const [showDetailsModal, setShowDetailsModal] = useState(false);
+    const [selectedUserDetails, setSelectedUserDetails] = useState(null);
+    const [detailsLoading, setDetailsLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('roles');
     const [roleFilter, setRoleFilter] = useState('client');
+    const verificationRequestCount = verificationRequests.length;
 
     const user = JSON.parse(localStorage.getItem('user'));
     const adminUserId = user?.user_id;
@@ -85,8 +90,14 @@ const UserManagement = () => {
             
             const res = await axios.get('http://localhost:5000/api/admin/verification-requests', { params });
             setVerificationRequests(res.data);
+            if (onVerificationCountChange) {
+                onVerificationCountChange(Array.isArray(res.data) ? res.data.length : 0);
+            }
         } catch (err) {
             console.error('Error fetching verification requests:', err);
+            if (onVerificationCountChange) {
+                onVerificationCountChange(0);
+            }
             Swal.fire({
                 title: 'Error',
                 text: 'Failed to load verification requests',
@@ -125,7 +136,49 @@ const UserManagement = () => {
     const handleEditRole = (user) => {
         setEditingUserId(user.user_id);
         setSelectedRole(user.role_name);
+        setSelectedUserForEdit(user);
         setShowModal(true);
+    };
+
+    const openUserDetails = async (userLike) => {
+        setShowDetailsModal(true);
+        setDetailsLoading(true);
+
+        try {
+            const profileRes = await axios.get(`http://localhost:5000/api/user-profile/${userLike.user_id}`);
+            const profile = profileRes.data || {};
+
+            setSelectedUserDetails({
+                user_id: userLike.user_id,
+                first_name: userLike.first_name || profile.first_name || '',
+                last_name: userLike.last_name || profile.last_name || '',
+                email: userLike.email || profile.email || '',
+                contact_number: userLike.contact_number || profile.contact_number || '',
+                address: profile.address || 'N/A',
+                role_name: userLike.role_name || 'client',
+                created_at: userLike.created_at || null,
+                is_verified: userLike.is_verified,
+                is_senior: Number(profile.is_senior || 0),
+                is_pwd: Number(profile.is_pwd || 0),
+                senior_verified: profile.senior_verified,
+                pwd_verified: profile.pwd_verified,
+                profile_image_url: profile.profile_image_url || userLike.profile_image_url || '',
+                id_image_url: profile.id_image_url || '',
+                id_front_image_url: profile.id_front_image_url || '',
+                id_back_image_url: profile.id_back_image_url || '',
+                request_type: userLike.request_type || null
+            });
+        } catch (err) {
+            Swal.fire({
+                title: 'Error',
+                text: 'Failed to load user details',
+                icon: 'error',
+                confirmButtonColor: '#2563eb'
+            });
+            setShowDetailsModal(false);
+        } finally {
+            setDetailsLoading(false);
+        }
     };
 
     const handleSaveRole = async () => {
@@ -157,6 +210,7 @@ const UserManagement = () => {
 
             setShowModal(false);
             setEditingUserId(null);
+            setSelectedUserForEdit(null);
             fetchUsers();
         } catch (err) {
             Swal.fire({
@@ -188,7 +242,7 @@ const UserManagement = () => {
             try {
                 await axios.put(`http://localhost:5000/api/admin/verify-senior/${userId}`, {
                     approve,
-                    adminUserId
+                    userId: adminUserId
                 });
 
                 Swal.fire({
@@ -232,7 +286,7 @@ const UserManagement = () => {
             try {
                 await axios.put(`http://localhost:5000/api/admin/verify-pwd/${userId}`, {
                     approve,
-                    adminUserId
+                    userId: adminUserId
                 });
 
                 Swal.fire({
@@ -249,6 +303,49 @@ const UserManagement = () => {
                 Swal.fire({
                     title: 'Error',
                     text: err.response?.data?.message || `Failed to ${action} PWD verification`,
+                    icon: 'error',
+                    confirmButtonColor: '#2563eb'
+                });
+            }
+        }
+    };
+
+    const handleRevokeDiscount = async (userId, requestType) => {
+        const label = requestType === 'senior' ? 'Senior Citizen' : 'PWD';
+
+        const result = await Swal.fire({
+            title: 'Confirm Action',
+            text: `Remove the approved ${label} discount request?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Remove'
+        });
+
+        if (result.isConfirmed) {
+            try {
+                await axios.put(`http://localhost:5000/api/admin/revoke-discount/${userId}`, {
+                    requestType,
+                    userId: adminUserId
+                });
+
+                Swal.fire({
+                    title: 'Success!',
+                    text: `${label} discount request removed successfully`,
+                    icon: 'success',
+                    timer: 1500,
+                    confirmButtonColor: '#2563eb'
+                });
+
+                setShowModal(false);
+                setSelectedUserForEdit(null);
+                fetchUsers();
+                fetchVerificationRequests();
+            } catch (err) {
+                Swal.fire({
+                    title: 'Error',
+                    text: err.response?.data?.message || `Failed to remove ${label} discount request`,
                     icon: 'error',
                     confirmButtonColor: '#2563eb'
                 });
@@ -297,11 +394,16 @@ const UserManagement = () => {
                     User Roles
                 </button>
                 <button
-                    className={`tab-button ${activeTab === 'verification' ? 'active' : ''}`}
+                    className={`tab-button tab-button-with-badge ${activeTab === 'verification' ? 'active' : ''}`}
                     onClick={() => setActiveTab('verification')}
                 >
                     <ShieldCheck size={18} />
                     Verification Requests
+                    {verificationRequestCount > 0 && (
+                        <span className="tab-alert-badge">
+                            {verificationRequestCount > 99 ? '99+' : verificationRequestCount}
+                        </span>
+                    )}
                 </button>
             </div>
 
@@ -365,7 +467,19 @@ const UserManagement = () => {
                             </div>
 
                             {filteredUsers.map(user => (
-                                <div key={user.user_id} className="table-row">
+                                <div
+                                    key={user.user_id}
+                                    className="table-row clickable-row"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => openUserDetails(user)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            openUserDetails(user);
+                                        }
+                                    }}
+                                >
                                     <div className="col-name">
                                         <strong>{user.first_name} {user.last_name}</strong>
                                     </div>
@@ -396,14 +510,20 @@ const UserManagement = () => {
                                                 <div className="verification-actions">
                                                     <button
                                                         className="btn-approve"
-                                                        onClick={() => handleVerifySenior(user.user_id, true)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleVerifySenior(user.user_id, true);
+                                                        }}
                                                         title="Approve Senior Citizen"
                                                     >
                                                         ✓
                                                     </button>
                                                     <button
                                                         className="btn-reject"
-                                                        onClick={() => handleVerifySenior(user.user_id, false)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleVerifySenior(user.user_id, false);
+                                                        }}
                                                         title="Reject Senior Citizen"
                                                     >
                                                         ✗
@@ -424,14 +544,20 @@ const UserManagement = () => {
                                                 <div className="verification-actions">
                                                     <button
                                                         className="btn-approve"
-                                                        onClick={() => handleVerifyPwd(user.user_id, true)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleVerifyPwd(user.user_id, true);
+                                                        }}
                                                         title="Approve PWD"
                                                     >
                                                         ✓
                                                     </button>
                                                     <button
                                                         className="btn-reject"
-                                                        onClick={() => handleVerifyPwd(user.user_id, false)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleVerifyPwd(user.user_id, false);
+                                                        }}
                                                         title="Reject PWD"
                                                     >
                                                         ✗
@@ -448,7 +574,10 @@ const UserManagement = () => {
                                     <div className="col-actions">
                                         <button
                                             className="btn-edit-role"
-                                            onClick={() => handleEditRole(user)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleEditRole(user);
+                                            }}
                                             title="Edit role"
                                         >
                                             <Edit2 size={18} />
@@ -495,7 +624,19 @@ const UserManagement = () => {
                             </div>
 
                             {verificationRequests.map(request => (
-                                <div key={`${request.user_id}-${request.request_type}`} className="table-row">
+                                <div
+                                    key={`${request.user_id}-${request.request_type}`}
+                                    className="table-row clickable-row"
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => openUserDetails(request)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            openUserDetails(request);
+                                        }
+                                    }}
+                                >
                                     <div className="col-name">
                                         <strong>{request.first_name} {request.last_name}</strong>
                                     </div>
@@ -512,18 +653,24 @@ const UserManagement = () => {
                                     <div className="col-actions">
                                         <button
                                             className="btn-approve"
-                                            onClick={() => request.request_type === 'senior' ? 
-                                                handleVerifySenior(request.user_id, true) : 
-                                                handleVerifyPwd(request.user_id, true)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                request.request_type === 'senior'
+                                                    ? handleVerifySenior(request.user_id, true)
+                                                    : handleVerifyPwd(request.user_id, true);
+                                            }}
                                             title={`Approve ${request.request_type === 'senior' ? 'Senior Citizen' : 'PWD'} verification`}
                                         >
                                             ✓ Approve
                                         </button>
                                         <button
                                             className="btn-reject"
-                                            onClick={() => request.request_type === 'senior' ? 
-                                                handleVerifySenior(request.user_id, false) : 
-                                                handleVerifyPwd(request.user_id, false)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                request.request_type === 'senior'
+                                                    ? handleVerifySenior(request.user_id, false)
+                                                    : handleVerifyPwd(request.user_id, false);
+                                            }}
                                             title={`Reject ${request.request_type === 'senior' ? 'Senior Citizen' : 'PWD'} verification`}
                                         >
                                             ✗ Reject
@@ -536,6 +683,89 @@ const UserManagement = () => {
                 </div>
             )}
 
+            {showDetailsModal && (
+                <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
+                    <div className="modal user-details-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h3>User Details</h3>
+                            <button className="btn-close" onClick={() => setShowDetailsModal(false)}>✕</button>
+                        </div>
+
+                        {detailsLoading || !selectedUserDetails ? (
+                            <div className="loading">Loading user details...</div>
+                        ) : (
+                            <div className="user-details-content">
+                                <div className="id-proof-section">
+                                    <h4>Profile Image</h4>
+                                    {selectedUserDetails.profile_image_url ? (
+                                        <a href={selectedUserDetails.profile_image_url} target="_blank" rel="noreferrer" className="id-proof-link">
+                                            <img src={selectedUserDetails.profile_image_url} alt="User profile" className="id-proof-image" />
+                                        </a>
+                                    ) : (
+                                        <p>No profile image uploaded.</p>
+                                    )}
+                                </div>
+
+                                <div className="user-details-grid">
+                                    <div><strong>Name:</strong> {selectedUserDetails.first_name} {selectedUserDetails.last_name}</div>
+                                    <div><strong>Email:</strong> {selectedUserDetails.email || 'N/A'}</div>
+                                    <div><strong>Contact:</strong> {selectedUserDetails.contact_number || 'N/A'}</div>
+                                    <div><strong>Role:</strong> {normalizeRoleName(selectedUserDetails.role_name || 'client')}</div>
+                                    <div><strong>Address:</strong> {selectedUserDetails.address || 'N/A'}</div>
+                                    <div><strong>Joined:</strong> {selectedUserDetails.created_at ? new Date(selectedUserDetails.created_at).toLocaleDateString() : 'N/A'}</div>
+                                    <div><strong>Senior Request:</strong> {Number(selectedUserDetails.is_senior) === 1 ? 'Yes' : 'No'}</div>
+                                    <div>
+                                        <strong>Senior Verified:</strong> {
+                                            Number(selectedUserDetails.is_senior) !== 1
+                                                ? 'No request yet'
+                                                : selectedUserDetails.senior_verified === null
+                                                    ? 'Pending'
+                                                    : Number(selectedUserDetails.senior_verified) === 1
+                                                        ? 'Approved'
+                                                        : 'Rejected'
+                                        }
+                                    </div>
+                                    <div><strong>PWD Request:</strong> {Number(selectedUserDetails.is_pwd) === 1 ? 'Yes' : 'No'}</div>
+                                    <div>
+                                        <strong>PWD Verified:</strong> {
+                                            Number(selectedUserDetails.is_pwd) !== 1
+                                                ? 'No request yet'
+                                                : selectedUserDetails.pwd_verified === null
+                                                    ? 'Pending'
+                                                    : Number(selectedUserDetails.pwd_verified) === 1
+                                                        ? 'Approved'
+                                                        : 'Rejected'
+                                        }
+                                    </div>
+                                </div>
+
+                                <div className="id-proof-section">
+                                    <h4>ID Proof Front</h4>
+                                    {selectedUserDetails.id_front_image_url || selectedUserDetails.id_image_url ? (
+                                        <a href={selectedUserDetails.id_front_image_url || selectedUserDetails.id_image_url} target="_blank" rel="noreferrer" className="id-proof-link">
+                                            <img src={selectedUserDetails.id_front_image_url || selectedUserDetails.id_image_url} alt="User ID front" className="id-proof-image" />
+                                        </a>
+                                    ) : (
+                                        <p>No front ID image uploaded.</p>
+                                    )}
+                                </div>
+
+                                <div className="id-proof-section">
+                                    <h4>ID Proof Back</h4>
+                                    {selectedUserDetails.id_back_image_url ? (
+                                        <a href={selectedUserDetails.id_back_image_url} target="_blank" rel="noreferrer" className="id-proof-link">
+                                            <img src={selectedUserDetails.id_back_image_url} alt="User ID back" className="id-proof-image" />
+                                        </a>
+                                    ) : (
+                                        <p>No back ID image uploaded.</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Modal for changing role */}
             {showModal && (
                 <div className="modal-overlay">
@@ -544,7 +774,10 @@ const UserManagement = () => {
                             <h3>Change User Role</h3>
                             <button 
                                 className="btn-close"
-                                onClick={() => setShowModal(false)}
+                                onClick={() => {
+                                    setShowModal(false);
+                                    setSelectedUserForEdit(null);
+                                }}
                             >
                                 ✕
                             </button>
@@ -601,12 +834,44 @@ const UserManagement = () => {
                                     </div>
                                 )}
                             </div>
+
+                            {selectedUserForEdit && normalizeRoleName(selectedUserForEdit.role_name) === 'client' && (
+                                <div className="discount-admin-section">
+                                    <strong>Discount Privilege</strong>
+                                    <div className="discount-admin-actions">
+                                        {Number(selectedUserForEdit.is_senior) === 1 && (
+                                            <button
+                                                type="button"
+                                                className="btn-reject discount-remove-btn"
+                                                onClick={() => handleRevokeDiscount(selectedUserForEdit.user_id, 'senior')}
+                                            >
+                                                {selectedUserForEdit.senior_verified === 1 ? 'Remove Senior Discount' : 'Cancel Senior Request'}
+                                            </button>
+                                        )}
+                                        {Number(selectedUserForEdit.is_pwd) === 1 && (
+                                            <button
+                                                type="button"
+                                                className="btn-reject discount-remove-btn"
+                                                onClick={() => handleRevokeDiscount(selectedUserForEdit.user_id, 'pwd')}
+                                            >
+                                                {selectedUserForEdit.pwd_verified === 1 ? 'Remove PWD Discount' : 'Cancel PWD Request'}
+                                            </button>
+                                        )}
+                                        {Number(selectedUserForEdit.is_senior) !== 1 && Number(selectedUserForEdit.is_pwd) !== 1 && (
+                                            <p className="pending">No active discount request</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="modal-actions">
                             <button
                                 className="btn-cancel"
-                                onClick={() => setShowModal(false)}
+                                onClick={() => {
+                                    setShowModal(false);
+                                    setSelectedUserForEdit(null);
+                                }}
                             >
                                 Cancel
                             </button>

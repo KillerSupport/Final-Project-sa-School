@@ -79,6 +79,8 @@
 }
 
 .client-profile-button,
+.client-settings-button,
+.client-order-button,
 .client-cart-button,
 .client-admin-link,
 .btn-details,
@@ -94,6 +96,42 @@
     background: transparent;
     padding: 0;
     cursor: pointer;
+}
+
+.client-settings-button {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.36);
+    background: rgba(255, 255, 255, 0.2);
+    color: #083344;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.client-order-button {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.36);
+    background: rgba(255, 255, 255, 0.2);
+    color: #083344;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.client-order-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.client-settings-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .client-profile-image,
@@ -747,6 +785,96 @@
     border: 1px solid rgba(8, 145, 178, 0.12);
     border-radius: 18px;
     padding: 16px;
+}
+
+.discount-request-section {
+    background: rgba(14, 116, 144, 0.08);
+    border: 1px solid rgba(14, 116, 144, 0.2);
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.discount-request-section.discount-request-approved {
+    background: rgba(148, 163, 184, 0.18);
+    border-color: rgba(148, 163, 184, 0.45);
+    color: #64748b;
+    opacity: 0.9;
+    filter: grayscale(1);
+}
+
+.discount-request-section.discount-request-approved h4,
+.discount-request-section.discount-request-approved .discount-help-text,
+.discount-request-section.discount-request-approved .discount-status-message,
+.discount-request-section.discount-request-approved .discount-file-note,
+.discount-request-section.discount-request-approved .discount-radio-group label,
+.discount-request-section.discount-request-approved .field-label {
+    color: #64748b;
+}
+
+.discount-request-section.discount-request-approved input,
+.discount-request-section.discount-request-approved button {
+    cursor: not-allowed;
+}
+
+.discount-request-section.discount-request-approved .discount-status-action-row .discount-status-message {
+    color: #475569;
+}
+
+.discount-request-section h4 {
+    margin: 0;
+    color: #083344;
+}
+
+.discount-help-text {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #334155;
+}
+
+.discount-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.discount-radio-group label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.discount-status-message {
+    margin: 2px 0 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.discount-status-action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.discount-confirm-btn {
+    min-width: 140px;
+}
+
+.discount-status-action-row .discount-status-message {
+    margin: 0;
+    flex: 1;
+}
+
+.discount-file-note {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #475569;
 }
 
 .password-row {

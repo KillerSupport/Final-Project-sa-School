@@ -62,7 +62,7 @@ function buildInvoicePdf(order, customer, items, invoiceNumber, filePath, meta =
         doc.text(`Order ID: #${order.order_id}`);
         doc.text(`Customer: ${customer}`);
         doc.text(`Email: ${order.email || '-'}`);
-        doc.text(`Contact Number: ${order.contact_number || '-'}`);
+        doc.text(`Contact Number: ${order.contact_number || meta.contactNumber || '-'}`);
         doc.text(`Order Date: ${new Date(order.created_at).toLocaleString()}`);
         doc.text(`Status: ${order.status || 'pending'}`);
         doc.text(`Invoice Prepared By: ${issuedBy}`);
@@ -144,11 +144,21 @@ db.connect(err => {
     if (err) throw err;
     console.log("Connected to MySQL Database.");
 
+    // Legacy cleanup: processing is now treated as pending in order flows.
+    db.query("UPDATE orders SET status = 'pending' WHERE status = 'processing'", (statusFixErr) => {
+        if (statusFixErr) {
+            console.error('Status normalization warning:', statusFixErr.message);
+        }
+    });
+
     const schemaUpdates = [
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_by_user_id INT NULL AFTER invoice_pdf_path",
         "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS issued_by_name VARCHAR(120) NULL AFTER issued_by_user_id",
         "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by_user_id INT NULL AFTER payment_method",
-        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by_name VARCHAR(120) NULL AFTER paid_by_user_id"
+        "ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_by_name VARCHAR(120) NULL AFTER paid_by_user_id",
+        "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(500) NULL AFTER pwd_verified",
+        "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS id_front_image_url VARCHAR(500) NULL AFTER id_image_url",
+        "ALTER TABLE user_accounts ADD COLUMN IF NOT EXISTS id_back_image_url VARCHAR(500) NULL AFTER id_front_image_url"
     ];
 
     schemaUpdates.forEach((sql) => {
@@ -165,9 +175,12 @@ const checkRole = (requiredRole) => {
     return (req, res, next) => {
         const userId =
             req.body?.userId ||
+            req.body?.adminUserId ||
             req.query?.userId ||
+            req.query?.adminUserId ||
             req.params?.userId ||
-            req.headers['x-user-id'];
+            req.headers['x-user-id'] ||
+            req.headers['x-admin-user-id'];
         
         if (!userId) {
             return res.status(401).json({ message: "User not authenticated" });
@@ -181,16 +194,26 @@ const checkRole = (requiredRole) => {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            const userRole = result[0].role_name;
+            const userRole = String(result[0].role_name || '');
+            const normalizedUserRole = userRole.toLowerCase();
+            const canonicalRole = (
+                normalizedUserRole === 'worker' ||
+                normalizedUserRole === 'staff' ||
+                normalizedUserRole === 'employee' ||
+                normalizedUserRole === 'moderator'
+            )
+                ? 'worker'
+                : normalizedUserRole;
             
             if (requiredRole && requiredRole !== '*') {
-                const allowedRoles = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
-                if (!allowedRoles.includes(userRole)) {
+                const allowedRoles = (Array.isArray(requiredRole) ? requiredRole : [requiredRole])
+                    .map((role) => String(role).toLowerCase());
+                if (!allowedRoles.includes(canonicalRole)) {
                     return res.status(403).json({ message: "Access denied. Insufficient role." });
                 }
             }
 
-            req.userRole = userRole;
+            req.userRole = canonicalRole;
             next();
         });
     };
@@ -518,20 +541,79 @@ app.post('/api/upload-image', upload.single('image'), (req, res) => {
 });
 
 // --- 11.6. UPLOAD USER ID IMAGE AND UPDATE SENIOR/PWD STATUS ---
-app.post('/api/upload-id', upload.single('idImage'), (req, res) => {
+app.post('/api/upload-id', upload.fields([
+    { name: 'idFront', maxCount: 1 },
+    { name: 'idBack', maxCount: 1 }
+]), (req, res) => {
     const { userId, isSenior, isPwd } = req.body;
-    
-    if (!req.file) {
-        return res.status(400).json({ message: 'No ID image uploaded' });
+
+    if (!userId) {
+        return res.status(400).json({ message: 'User ID is required' });
     }
-    
-    const idImageUrl = `http://localhost:5000/uploads/${req.file.filename}`;
-    
-    const sql = "UPDATE user_accounts SET is_senior = ?, is_pwd = ?, id_image_url = ? WHERE user_id = ?";
-    db.query(sql, [isSenior ? 1 : 0, isPwd ? 1 : 0, idImageUrl, userId], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "ID uploaded. Awaiting admin verification for discount eligibility.", idImageUrl });
-    });
+
+    const wantsSenior = String(isSenior).toLowerCase() === 'true' || String(isSenior) === '1';
+    const wantsPwd = String(isPwd).toLowerCase() === 'true' || String(isPwd) === '1';
+
+    if (wantsSenior === wantsPwd) {
+        return res.status(400).json({ message: 'Please select either Senior or PWD request.' });
+    }
+
+    db.query(
+        "SELECT id_image_url, id_front_image_url, id_back_image_url, senior_verified, pwd_verified FROM user_accounts WHERE user_id = ? AND is_deleted = 0",
+        [userId],
+        (findErr, rows) => {
+            if (findErr) return res.status(500).json({ message: 'Database error' });
+            if (rows.length === 0) return res.status(404).json({ message: 'User not found' });
+
+            const userRow = rows[0];
+            const isAlreadyApproved = Number(userRow.senior_verified) === 1 || Number(userRow.pwd_verified) === 1;
+
+            // Lock request once admin approves eligibility.
+            if (isAlreadyApproved) {
+                return res.status(400).json({ message: 'Discount eligibility already approved and locked.' });
+            }
+
+            const idFrontFile = req.files?.idFront?.[0];
+            const idBackFile = req.files?.idBack?.[0];
+            const idFrontImageUrl = idFrontFile
+                ? `http://localhost:5000/uploads/${idFrontFile.filename}`
+                : (userRow.id_front_image_url || null);
+            const idBackImageUrl = idBackFile
+                ? `http://localhost:5000/uploads/${idBackFile.filename}`
+                : (userRow.id_back_image_url || null);
+
+            if (!idFrontImageUrl || !idBackImageUrl) {
+                return res.status(400).json({ message: 'Please upload both front and back ID images for verification.' });
+            }
+
+            const nextIsSenior = wantsSenior ? 1 : 0;
+            const nextIsPwd = wantsPwd ? 1 : 0;
+            const nextSeniorVerified = wantsSenior ? null : 0;
+            const nextPwdVerified = wantsPwd ? null : 0;
+
+            const sql = `
+                UPDATE user_accounts
+                SET is_senior = ?,
+                    is_pwd = ?,
+                    senior_verified = ?,
+                    pwd_verified = ?,
+                    id_image_url = ?,
+                    id_front_image_url = ?,
+                    id_back_image_url = ?
+                WHERE user_id = ?
+            `;
+
+            db.query(sql, [nextIsSenior, nextIsPwd, nextSeniorVerified, nextPwdVerified, idFrontImageUrl, idFrontImageUrl, idBackImageUrl, userId], (updateErr) => {
+                if (updateErr) return res.status(500).json({ message: 'Database error' });
+                res.json({
+                    message: 'Discount request submitted. Awaiting admin verification.',
+                    idFrontImageUrl,
+                    idBackImageUrl,
+                    requestType: wantsSenior ? 'senior' : 'pwd'
+                });
+            });
+        }
+    );
 });
 
 // --- 12. CREATE PRODUCT (Admin and Worker) ---
@@ -1061,14 +1143,23 @@ app.get('/api/worker/orders', checkRole(['admin', 'worker']), (req, res) => {
     const sql = `
         SELECT o.order_id,
                o.total_amount AS order_total,
-               o.status AS order_status,
+               CASE WHEN LOWER(o.status) = 'processing' THEN 'pending' ELSE o.status END AS order_status,
                o.created_at AS order_date,
+               o.updated_at,
+               o.shipping_address,
                o.payment_method,
                u.user_id,
                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
-               u.email
+               u.email,
+               u.contact_number,
+               COALESCE(oi.items_count, 0) AS items_count
         FROM orders o
         JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN (
+            SELECT order_id, SUM(quantity) AS items_count
+            FROM order_items
+            GROUP BY order_id
+        ) oi ON oi.order_id = o.order_id
         ORDER BY o.created_at DESC
     `;
 
@@ -1087,7 +1178,9 @@ app.put('/api/worker/orders/:orderId', checkRole(['admin', 'worker']), (req, res
         return res.status(400).json({ message: 'Status is required' });
     }
 
-    db.query('UPDATE orders SET status = ? WHERE order_id = ?', [status, orderId], (err) => {
+    const normalizedStatus = String(status || '').toLowerCase() === 'processing' ? 'pending' : status;
+
+    db.query('UPDATE orders SET status = ? WHERE order_id = ?', [normalizedStatus, orderId], (err) => {
         if (err) return res.status(500).json({ message: 'Database error' });
         res.json({ message: 'Order updated successfully' });
     });
@@ -1102,9 +1195,16 @@ app.get('/api/worker/sales-history', checkRole(['admin', 'worker']), (req, res) 
                o.updated_at AS order_date,
                o.payment_method,
                CONCAT(u.first_name, ' ', u.last_name) AS customer_name,
-               u.email
+               u.email,
+               u.contact_number,
+               i.invoice_id,
+               i.invoice_number,
+               i.invoice_pdf_path,
+               i.issued_by_name,
+               o.paid_by_name
         FROM orders o
         JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON i.order_id = o.order_id
         WHERE o.status = 'completed'
         ORDER BY o.updated_at DESC
     `;
@@ -1112,6 +1212,115 @@ app.get('/api/worker/sales-history', checkRole(['admin', 'worker']), (req, res) 
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ message: 'Database error' });
         res.json({ salesHistory: results });
+    });
+});
+
+app.get('/api/worker/sales-history/:orderId/details', checkRole(['admin', 'worker']), (req, res) => {
+    const { orderId } = req.params;
+
+    const orderSql = `
+        SELECT o.order_id, o.user_id, o.total_amount, o.status, o.payment_method,
+               o.created_at, o.updated_at, o.paid_by_name,
+               u.first_name, u.last_name, u.email, u.contact_number,
+               i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name, i.created_at AS invoice_created_at
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON i.order_id = o.order_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    const itemsSql = `
+        SELECT oi.order_item_id, oi.product_id, oi.quantity, oi.price, oi.unit_discount,
+               p.name, p.image_url
+        FROM order_items oi
+        JOIN products p ON p.product_id = oi.product_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.order_item_id ASC
+    `;
+
+    const emailSql = `
+        SELECT ir.request_id, ir.request_time, ir.email_sent,
+               CONCAT(sender.first_name, ' ', sender.last_name) AS requested_by_name
+        FROM invoice_requests ir
+        LEFT JOIN user_accounts sender ON sender.user_id = ir.requested_by
+        WHERE ir.invoice_id = ?
+        ORDER BY ir.request_time DESC
+    `;
+
+    db.query(orderSql, [orderId], (orderErr, orderRows) => {
+        if (orderErr) return res.status(500).json({ message: 'Database error' });
+        if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const order = orderRows[0];
+
+        db.query(itemsSql, [orderId], (itemsErr, itemsRows) => {
+            if (itemsErr) return res.status(500).json({ message: 'Database error' });
+
+            db.query(emailSql, [order.invoice_id || 0], (emailErr, emailRows) => {
+                if (emailErr) return res.status(500).json({ message: 'Database error' });
+
+                const items = (itemsRows || []).map((item) => {
+                    const quantity = Number(item.quantity || 0);
+                    const price = Number(item.price || 0);
+                    const unitDiscount = Number(item.unit_discount || 0);
+                    const lineSubtotal = quantity * price;
+                    const lineDiscount = quantity * unitDiscount;
+
+                    return {
+                        order_item_id: item.order_item_id,
+                        product_id: item.product_id,
+                        product_name: item.name,
+                        image_url: item.image_url,
+                        quantity,
+                        price,
+                        unit_discount: unitDiscount,
+                        line_subtotal: lineSubtotal,
+                        line_discount: lineDiscount,
+                        line_total: lineSubtotal - lineDiscount
+                    };
+                });
+
+                const subtotal = items.reduce((sum, item) => sum + item.line_subtotal, 0);
+                const discount = items.reduce((sum, item) => sum + item.line_discount, 0);
+                const total = items.reduce((sum, item) => sum + item.line_total, 0);
+
+                res.json({
+                    order: {
+                        order_id: order.order_id,
+                        user_id: order.user_id,
+                        customer_name: `${order.first_name || ''} ${order.last_name || ''}`.trim(),
+                        email: order.email,
+                        contact_number: order.contact_number,
+                        total_amount: Number(order.total_amount || total),
+                        status: order.status,
+                        payment_method: order.payment_method,
+                        created_at: order.created_at,
+                        updated_at: order.updated_at,
+                        paid_by_name: order.paid_by_name || null
+                    },
+                    invoice: order.invoice_id ? {
+                        invoice_id: order.invoice_id,
+                        invoice_number: order.invoice_number,
+                        invoice_pdf_path: order.invoice_pdf_path,
+                        issued_by_name: order.issued_by_name,
+                        created_at: order.invoice_created_at
+                    } : null,
+                    items,
+                    email_history: (emailRows || []).map((row) => ({
+                        request_id: row.request_id,
+                        requested_by_name: row.requested_by_name || 'System',
+                        request_time: row.request_time,
+                        email_sent: Boolean(row.email_sent)
+                    })),
+                    summary: {
+                        subtotal,
+                        discount,
+                        total: Number(order.total_amount || total)
+                    }
+                });
+            });
+        });
     });
 });
 
@@ -1402,7 +1611,11 @@ app.post('/api/worker/generate-invoice', checkRole(['admin', 'worker']), (req, r
                                         itemRows || [],
                                         invoiceRecord.invoice_number || safeInvoiceNumber,
                                         absPath,
-                                        { issuedBy: issuedByName, paidBy: order.paid_by_name || '' }
+                                        {
+                                            issuedBy: issuedByName,
+                                            paidBy: order.paid_by_name || '',
+                                            contactNumber: order.contact_number || ''
+                                        }
                                     );
 
                                     db.query('UPDATE invoices SET invoice_pdf_path = ? WHERE invoice_id = ?', [publicPath, invoiceRecord.invoice_id]);
@@ -1459,6 +1672,96 @@ app.post('/api/worker/generate-invoice', checkRole(['admin', 'worker']), (req, r
 });
 
 // --- 27BA. WORKER/ADMIN MANUAL INVOICE STATUS UPDATE (PAID OR CANCELLED) ---
+function sendPaymentConfirmationInvoiceEmail(orderId, requestedByUserId, callback) {
+    const sql = `
+        SELECT o.order_id, o.total_amount, o.created_at, o.status, o.payment_method,
+               o.paid_by_name, o.paid_by_user_id,
+               u.user_id, u.email, u.first_name, u.last_name,
+               i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name
+        FROM orders o
+        JOIN user_accounts u ON o.user_id = u.user_id
+        LEFT JOIN invoices i ON o.order_id = i.order_id
+        WHERE o.order_id = ?
+        LIMIT 1
+    `;
+
+    const fail = (message, status = 500) => {
+        const error = new Error(message);
+        error.status = status;
+        callback(error);
+    };
+
+    db.query(sql, [orderId], (orderErr, orderRows) => {
+        if (orderErr) return fail('Database error', 500);
+        if (!orderRows || orderRows.length === 0) return fail('Order not found', 404);
+
+        const row = orderRows[0];
+        if (!row.email) return fail('Customer email is missing for this order', 400);
+
+        const sendEmail = (payload) => {
+            const invoiceUrl = payload.invoice_pdf_path
+                ? `http://localhost:5000${payload.invoice_pdf_path}`
+                : `http://localhost:5000/api/orders/${payload.order_id}/invoice-pdf?userId=${payload.user_id}`;
+
+            const mailOptions = {
+                from: 'tongtongornamental@gmail.com',
+                to: payload.email,
+                subject: `Payment Confirmed - Order #${payload.order_id} (Invoice ${payload.invoice_number})`,
+                html: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                        <h2>TongTong Ornamental Fish Store</h2>
+                        <p>Hello ${payload.first_name || ''} ${payload.last_name || ''},</p>
+                        <p>Your in-store payment for <strong>Order #${payload.order_id}</strong> has been confirmed.</p>
+                        <p><strong>Invoice Number:</strong> ${payload.invoice_number}</p>
+                        <p><strong>Total Amount:</strong> PHP ${Number(payload.total_amount || 0).toFixed(2)}</p>
+                        <p><strong>Payment Method:</strong> ${payload.payment_method || 'cash_on_store'}</p>
+                        <p><strong>Payment Confirmed By:</strong> ${payload.paid_by_name || 'Store Staff'}</p>
+                        <p>Your updated invoice PDF is available here:</p>
+                        <p><a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer">Download Updated Invoice PDF</a></p>
+                    </div>
+                `
+            };
+
+            transporter.sendMail(mailOptions, (mailErr) => {
+                if (mailErr) return callback(mailErr);
+
+                db.query(
+                    'INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)',
+                    [payload.invoice_id, requestedByUserId || payload.paid_by_user_id || payload.user_id],
+                    () => callback(null)
+                );
+            });
+        };
+
+        if (row.invoice_id) {
+            return sendEmail(row);
+        }
+
+        const generatedInvoiceNumber = `INV-${Date.now()}-${orderId}`;
+        db.query(
+            'INSERT INTO invoices (order_id, invoice_number, payment_method, invoice_pdf_path, issued_by_user_id, issued_by_name) VALUES (?, ?, ?, ?, ?, ?)',
+            [
+                row.order_id,
+                generatedInvoiceNumber,
+                row.payment_method || 'cash_on_store',
+                null,
+                requestedByUserId || row.paid_by_user_id || null,
+                row.paid_by_name || null
+            ],
+            (insertErr, insertResult) => {
+                if (insertErr) return fail('Failed to create invoice record for this order', 500);
+
+                return sendEmail({
+                    ...row,
+                    invoice_id: insertResult.insertId,
+                    invoice_number: generatedInvoiceNumber,
+                    invoice_pdf_path: null
+                });
+            }
+        );
+    });
+}
+
 app.put('/api/worker/invoice/:orderId/status', checkRole(['admin', 'worker']), (req, res) => {
     const { orderId } = req.params;
     const status = String(req.body?.status || '').toLowerCase();
@@ -1500,7 +1803,21 @@ app.put('/api/worker/invoice/:orderId/status', checkRole(['admin', 'worker']), (
                 ],
                 (err) => {
                     if (err) return res.status(500).json({ message: 'Database error' });
-                    return res.json({ message: 'Invoice payment status updated successfully' });
+                    if (status !== 'paid') {
+                        return res.json({ message: 'Invoice payment status updated successfully' });
+                    }
+
+                    return sendPaymentConfirmationInvoiceEmail(orderId, actorUserId, (mailErr) => {
+                        if (mailErr) {
+                            console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                            return res.json({
+                                message: 'Invoice payment status updated successfully',
+                                warning: 'Payment updated, but invoice email could not be sent automatically'
+                            });
+                        }
+
+                        return res.json({ message: 'Invoice payment status updated and email sent successfully' });
+                    });
                 }
             );
         });
@@ -1515,59 +1832,11 @@ app.post('/api/worker/send-invoice-email', checkRole(['admin', 'worker']), (req,
         return res.status(400).json({ message: 'Order ID is required' });
     }
 
-    const sql = `
-         SELECT o.order_id, o.total_amount, o.created_at, o.status,
-               u.user_id, u.email, u.first_name, u.last_name,
-             i.invoice_id, i.invoice_number, i.invoice_pdf_path, i.issued_by_name,
-             o.paid_by_name
-        FROM orders o
-        JOIN user_accounts u ON o.user_id = u.user_id
-        LEFT JOIN invoices i ON o.order_id = i.order_id
-        WHERE o.order_id = ?
-        LIMIT 1
-    `;
-
-    db.query(sql, [order_id], (orderErr, orderRows) => {
-        if (orderErr) return res.status(500).json({ message: 'Database error' });
-        if (orderRows.length === 0) return res.status(404).json({ message: 'Order not found' });
-
-        const row = orderRows[0];
-        if (!row.invoice_id) {
-            return res.status(400).json({ message: 'Generate an invoice first before sending email' });
+    sendPaymentConfirmationInvoiceEmail(order_id, Number(userId || 0), (mailErr) => {
+        if (mailErr) {
+            return res.status(mailErr.status || 500).json({ message: mailErr.message || 'Failed to send invoice email' });
         }
-
-        const invoiceUrl = row.invoice_pdf_path
-            ? `http://localhost:5000${row.invoice_pdf_path}`
-            : `http://localhost:5000/api/orders/${row.order_id}/invoice-pdf?userId=${row.user_id}`;
-
-        const mailOptions = {
-            from: 'tongtongornamental@gmail.com',
-            to: row.email,
-            subject: `Invoice ${row.invoice_number} - TongTong Ornamental Fish Store`,
-            html: `
-                <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <h2>TongTong Ornamental Fish Store</h2>
-                    <p>Hello ${row.first_name || ''} ${row.last_name || ''},</p>
-                    <p>Your invoice for <strong>Order #${row.order_id}</strong> is ready.</p>
-                    <p><strong>Invoice Number:</strong> ${row.invoice_number}</p>
-                    <p><strong>Total Amount:</strong> PHP ${Number(row.total_amount || 0).toFixed(2)}</p>
-                    <p><strong>Prepared By:</strong> ${row.issued_by_name || 'Not specified'}</p>
-                    <p><strong>Payment Confirmed By:</strong> ${row.paid_by_name || 'Pending payment'}</p>
-                    <p>You can download and keep this PDF as receipt proof for in-store payment:</p>
-                    <p><a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer">Download Invoice PDF</a></p>
-                </div>
-            `
-        };
-
-        transporter.sendMail(mailOptions, (mailErr) => {
-            if (mailErr) return res.status(500).json({ message: 'Failed to send invoice email' });
-
-            db.query(
-                'INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)',
-                [row.invoice_id, userId || row.user_id],
-                () => res.json({ message: 'Invoice email sent successfully' })
-            );
-        });
+        return res.json({ message: 'Invoice email sent successfully' });
     });
 });
 
@@ -1650,7 +1919,11 @@ app.get('/api/orders/:orderId/invoice-pdf', (req, res) => {
                         itemRows || [],
                         row.invoice_number || safeInvoiceNumber,
                         absPath,
-                        { issuedBy: row.issued_by_name || '', paidBy: row.paid_by_name || '' }
+                        {
+                            issuedBy: row.issued_by_name || '',
+                            paidBy: row.paid_by_name || '',
+                            contactNumber: row.contact_number || ''
+                        }
                     );
 
                     db.query('UPDATE invoices SET invoice_pdf_path = ? WHERE invoice_id = ?', [publicPath, row.invoice_id]);
@@ -1703,8 +1976,6 @@ app.get('/api/worker/email-receipts', checkRole(['admin', 'worker']), (req, res)
 
 // --- 27D. WORKER/ADMIN CASH REGISTER ---
 app.get('/api/worker/cash-register', checkRole(['admin', 'worker']), (req, res) => {
-    const { userId } = req.query;
-
     const summarySql = `
         SELECT
             COALESCE((
@@ -1725,17 +1996,16 @@ app.get('/api/worker/cash-register', checkRole(['admin', 'worker']), (req, res) 
                 + COALESCE((
                     SELECT SUM(CASE WHEN entry_type = 'cash-adjustment' THEN amount ELSE 0 END)
                     FROM cash_register_entries
-                    WHERE DATE(created_at) = CURDATE() AND (? = 0 OR user_id = ?)
+                    WHERE DATE(created_at) = CURDATE()
                 ), 0)
                 - COALESCE((
                     SELECT SUM(CASE WHEN entry_type IN ('cash-return', 'cash-expense') THEN amount ELSE 0 END)
                     FROM cash_register_entries
-                    WHERE DATE(created_at) = CURDATE() AND (? = 0 OR user_id = ?)
+                    WHERE DATE(created_at) = CURDATE()
                 ), 0) AS expectedCash,
             COALESCE((
                 SELECT actual_cash
                 FROM cash_register_reconciliations
-                WHERE (? = 0 OR user_id = ?)
                 ORDER BY created_at DESC
                 LIMIT 1
             ), 0) AS actualCash,
@@ -1774,10 +2044,10 @@ app.get('/api/worker/cash-register', checkRole(['admin', 'worker']), (req, res) 
         FROM orders o
         JOIN user_accounts u ON o.user_id = u.user_id
         LEFT JOIN invoices i ON o.order_id = i.order_id
-        WHERE o.status = 'pending'
+        WHERE o.status IN ('pending', 'processing')
         ORDER BY o.created_at DESC`;
 
-    db.query(summarySql, [userId || 0, userId || 0, userId || 0, userId || 0, userId || 0, userId || 0], (summaryErr, summaryResults) => {
+    db.query(summarySql, (summaryErr, summaryResults) => {
         if (summaryErr) return res.status(500).json({ message: 'Database error' });
 
         db.query(entriesSql, (entriesErr, entriesResults) => {
@@ -1873,7 +2143,17 @@ app.put('/api/worker/cash-register/order/:orderId/status', checkRole(['admin', '
                     if (updateErr) return res.status(500).json({ message: 'Failed to update order status' });
 
                     if (!normalizedMethod.startsWith('cash')) {
-                        return res.json({ message: 'Order marked as paid' });
+                        return sendPaymentConfirmationInvoiceEmail(orderId, userId, (mailErr) => {
+                            if (mailErr) {
+                                console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                                return res.json({
+                                    message: 'Order marked as paid',
+                                    warning: 'Payment updated, but invoice email could not be sent automatically'
+                                });
+                            }
+
+                            return res.json({ message: 'Order marked as paid and invoice email sent' });
+                        });
                     }
 
                     const detailParts = [
@@ -1891,7 +2171,17 @@ app.put('/api/worker/cash-register/order/:orderId/status', checkRole(['admin', '
                         [userId, 'cash', row.total_amount, description],
                         (entryErr) => {
                             if (entryErr) return res.status(500).json({ message: 'Order marked paid, but failed to log cash entry' });
-                            return res.json({ message: 'Order marked as paid' });
+                            return sendPaymentConfirmationInvoiceEmail(orderId, userId, (mailErr) => {
+                                if (mailErr) {
+                                    console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                                    return res.json({
+                                        message: 'Order marked as paid',
+                                        warning: 'Payment updated, but invoice email could not be sent automatically'
+                                    });
+                                }
+
+                                return res.json({ message: 'Order marked as paid and invoice email sent' });
+                            });
                         }
                     );
                 }
@@ -1966,7 +2256,17 @@ app.post('/api/worker/cash-register/accept-payment', checkRole(['admin', 'worker
                 if (updateErr) return res.status(500).json({ message: 'Failed to update order payment status' });
 
                 if (!normalizedMethod.startsWith('cash')) {
-                    return res.json({ message: 'Payment accepted successfully' });
+                    return sendPaymentConfirmationInvoiceEmail(orderId, userId, (mailErr) => {
+                        if (mailErr) {
+                            console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                            return res.json({
+                                message: 'Payment accepted successfully',
+                                warning: 'Payment accepted, but invoice email could not be sent automatically'
+                            });
+                        }
+
+                        return res.json({ message: 'Payment accepted successfully and invoice email sent' });
+                    });
                 }
 
                 const detailParts = [
@@ -1984,7 +2284,17 @@ app.post('/api/worker/cash-register/accept-payment', checkRole(['admin', 'worker
                     [userId, 'cash', row.total_amount, description],
                     (entryErr) => {
                         if (entryErr) return res.status(500).json({ message: 'Payment accepted but failed to log cash entry' });
-                        return res.json({ message: 'Payment accepted successfully' });
+                        return sendPaymentConfirmationInvoiceEmail(orderId, userId, (mailErr) => {
+                            if (mailErr) {
+                                console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                                return res.json({
+                                    message: 'Payment accepted successfully',
+                                    warning: 'Payment accepted, but invoice email could not be sent automatically'
+                                });
+                            }
+
+                            return res.json({ message: 'Payment accepted successfully and invoice email sent' });
+                        });
                     }
                 );
             }
@@ -2165,7 +2475,7 @@ app.get('/api/worker/cash-register/order/:orderId/details', checkRole(['admin', 
         SELECT o.order_id, o.user_id, o.status, o.created_at, o.payment_method, o.total_amount,
                u.first_name, u.last_name, u.email, u.contact_number,
                u.is_senior, u.is_pwd, u.senior_verified, u.pwd_verified,
-               i.invoice_number
+             i.invoice_id, i.invoice_number
         FROM orders o
         JOIN user_accounts u ON o.user_id = u.user_id
         LEFT JOIN invoices i ON i.order_id = o.order_id
@@ -2223,7 +2533,9 @@ app.get('/api/worker/cash-register/order/:orderId/details', checkRole(['admin', 
                     created_at: order.created_at,
                     payment_method: order.payment_method,
                     total_amount: Number(order.total_amount || total),
+                    invoice_id: order.invoice_id || null,
                     invoice_number: order.invoice_number || null,
+                    has_invoice: Boolean(order.invoice_id),
                     customer_name: `${order.first_name || ''} ${order.last_name || ''}`.trim(),
                     email: order.email,
                     contact_number: order.contact_number
@@ -2257,7 +2569,7 @@ app.put('/api/worker/cash-register/reconcile', checkRole(['admin', 'worker']), (
 // --- 27D. WORKER/ADMIN TRANSACTION LOG ---
 app.get('/api/worker/transaction-log', checkRole(['admin', 'worker']), (req, res) => {
     const isAdmin = req.userRole === 'admin';
-    const roleFilter = isAdmin ? '' : "WHERE role_name = 'customer'";
+    const roleFilter = '';
 
     const sql = `
         SELECT * FROM (
@@ -2317,7 +2629,7 @@ app.get('/api/worker/transaction-log', checkRole(['admin', 'worker']), (req, res
             LEFT JOIN invoices i ON i.order_id = o.order_id
             JOIN roles r ON u.role_id = r.role_id
             WHERE o.status = 'completed'
-            ${isAdmin ? '' : "AND role_name = 'customer'"}
+
 
             UNION ALL
 
@@ -2679,11 +2991,29 @@ app.put('/api/background-settings/:settingName', checkRole('admin'), (req, res) 
 app.put('/api/orders/:orderId', checkRole('admin'), (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
+    const actorUserId = Number(req.body?.userId || req.query?.userId || req.headers['x-user-id'] || 0);
+    const rawStatus = String(status || '').toLowerCase();
+    const normalizedStatus = rawStatus === 'processing' ? 'pending' : rawStatus;
     const sql = "UPDATE orders SET status = ? WHERE order_id = ?";
     
-    db.query(sql, [status, orderId], (err) => {
+    db.query(sql, [normalizedStatus, orderId], (err) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "Order updated" });
+
+        if (normalizedStatus !== 'completed') {
+            return res.json({ message: "Order updated" });
+        }
+
+        return sendPaymentConfirmationInvoiceEmail(orderId, actorUserId, (mailErr) => {
+            if (mailErr) {
+                console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                return res.json({
+                    message: 'Order updated',
+                    warning: 'Payment updated, but invoice email could not be sent automatically'
+                });
+            }
+
+            return res.json({ message: 'Order updated and invoice email sent' });
+        });
     });
 });
 
@@ -2698,7 +3028,11 @@ app.get('/api/admin/orders', checkRole('admin'), (req, res) => {
     
     db.query(sql, (err, results) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        res.json(results);
+        const normalized = (results || []).map((row) => ({
+            ...row,
+            status: String(row.status || '').toLowerCase() === 'processing' ? 'pending' : row.status
+        }));
+        res.json(normalized);
     });
 });
 
@@ -3101,7 +3435,7 @@ app.post('/api/user-role', (req, res) => {
 // --- 28. GET USER PROFILE ---
 app.get('/api/user-profile/:userId', (req, res) => {
     const { userId } = req.params;
-    const sql = "SELECT user_id, first_name, last_name, email, contact_number, address, is_senior, is_pwd, senior_verified, pwd_verified, id_image_url FROM user_accounts WHERE user_id = ? AND is_deleted = 0";
+    const sql = "SELECT user_id, first_name, last_name, email, contact_number, address, is_senior, is_pwd, senior_verified, pwd_verified, profile_image_url, id_image_url, id_front_image_url, id_back_image_url FROM user_accounts WHERE user_id = ? AND is_deleted = 0";
     
     db.query(sql, [userId], (err, result) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -3113,15 +3447,16 @@ app.get('/api/user-profile/:userId', (req, res) => {
 // --- 28.1 UPDATE ACCOUNT PROFILE ---
 app.put('/api/account/:userId', (req, res) => {
     const { userId } = req.params;
-    const { first_name, last_name, email, id_image_url } = req.body;
+    const { first_name, last_name, email, profile_image_url, id_image_url } = req.body;
+    const nextProfileImageUrl = profile_image_url ?? id_image_url ?? null;
 
     const sql = `
         UPDATE user_accounts
-        SET first_name = ?, last_name = ?, email = ?, id_image_url = ?
+        SET first_name = ?, last_name = ?, email = ?, profile_image_url = ?
         WHERE user_id = ? AND is_deleted = 0
     `;
 
-    db.query(sql, [first_name, last_name, email, id_image_url || null, userId], (err, result) => {
+    db.query(sql, [first_name, last_name, email, nextProfileImageUrl, userId], (err, result) => {
         if (err) return res.status(500).json({ message: 'Database error' });
         if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
         res.json({ message: 'Account updated successfully' });
@@ -3184,6 +3519,37 @@ app.put('/api/admin/verify-pwd/:userId', checkRole('admin'), (req, res) => {
     });
 });
 
+// --- 30.1 ADMIN REVOKE DISCOUNT REQUEST ---
+app.put('/api/admin/revoke-discount/:userId', checkRole('admin'), (req, res) => {
+    const { userId } = req.params;
+    const { requestType } = req.body;
+
+    if (!['senior', 'pwd'].includes(requestType)) {
+        return res.status(400).json({ message: 'Invalid request type' });
+    }
+
+    const sql = requestType === 'senior'
+        ? `UPDATE user_accounts
+           SET is_senior = 0,
+               senior_verified = 0,
+               id_image_url = NULL,
+               id_front_image_url = NULL,
+               id_back_image_url = NULL
+           WHERE user_id = ?`
+        : `UPDATE user_accounts
+           SET is_pwd = 0,
+               pwd_verified = 0,
+               id_image_url = NULL,
+               id_front_image_url = NULL,
+               id_back_image_url = NULL
+           WHERE user_id = ?`;
+
+    db.query(sql, [userId], (err) => {
+        if (err) return res.status(500).json({ message: 'Database error' });
+        res.json({ message: `${requestType === 'senior' ? 'Senior Citizen' : 'PWD'} discount request removed successfully` });
+    });
+});
+
 // --- 31. GET PENDING VERIFICATION REQUESTS (Admin only) ---
 app.get('/api/admin/verification-requests', checkRole('admin'), (req, res) => {
     const { search } = req.query;
@@ -3218,7 +3584,8 @@ app.get('/api/admin/verification-requests', checkRole('admin'), (req, res) => {
 app.get('/api/users', (req, res) => {
     const { search } = req.query;
     let sql = `SELECT u.user_id, u.first_name, u.last_name, u.email, u.contact_number, 
-                      r.role_name, u.created_at, u.is_verified 
+                      r.role_name, u.created_at, u.is_verified,
+                      u.is_senior, u.is_pwd, u.senior_verified, u.pwd_verified 
                FROM user_accounts u 
                LEFT JOIN roles r ON u.role_id = r.role_id 
                WHERE u.is_deleted = 0`;
