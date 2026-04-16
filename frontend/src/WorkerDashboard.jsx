@@ -5,6 +5,36 @@ import Swal from 'sweetalert2';
 import { Edit2, ArrowLeft, LogOut, User, Package, Eye, EyeOff, ShoppingCart, TrendingUp, Receipt, DollarSign, Plus, X } from 'lucide-react';
 import './WorkerDashboard.css';
 
+const getStartOfCurrentWeek = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - diffToMonday);
+    return start;
+};
+
+const toSafeDate = (value) => {
+    const date = new Date(value || 0);
+    return Number.isNaN(date.getTime()) ? new Date(0) : date;
+};
+
+const getTransactionDateKey = (value) => {
+    const date = toSafeDate(value);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const formatTransactionDateHeading = (dateKey) => {
+    const date = toSafeDate(dateKey);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+};
+
 const WorkerDashboard = () => {
     const navigate = useNavigate();
     const getInitialTab = () => {
@@ -34,6 +64,9 @@ const WorkerDashboard = () => {
     const [showOrderModal, setShowOrderModal] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [orderProcessing, setOrderProcessing] = useState(false);
+    const [cancellationRequests, setCancellationRequests] = useState([]);
+    const [cancellationRequestsLoading, setCancellationRequestsLoading] = useState(false);
+    const [cancellationActionLoading, setCancellationActionLoading] = useState(false);
 
     // Sales History state
     const [salesHistory, setSalesHistory] = useState([]);
@@ -145,7 +178,26 @@ const WorkerDashboard = () => {
         fetchSalesHistory();
         fetchCashRegisterData();
         fetchTransactionLog();
+        fetchCancellationRequests();
+        // Load profile image on mount
+        if (userId) {
+            axios.get(`http://localhost:5000/api/user-profile/${userId}`)
+                .then(res => {
+                    setProfileImagePreview(res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
+                })
+                .catch(() => {
+                    setProfileImagePreview(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
+                });
+        }
     }, []);
+
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            fetchCancellationRequests();
+        }, 60000);
+
+        return () => clearInterval(intervalId);
+    }, [userId]);
     useEffect(() => {
         if (activeTab === 'orders') {
             fetchOrders();
@@ -215,6 +267,43 @@ const WorkerDashboard = () => {
             setOrders(orderRows.map(normalizeOrderRecord));
         } catch (err) {
             setOrders([]);
+        }
+    };
+
+    const fetchCancellationRequests = async () => {
+        if (!userId) {
+            setCancellationRequests([]);
+            return;
+        }
+
+        setCancellationRequestsLoading(true);
+        try {
+            const res = await axios.get('http://localhost:5000/api/admin/cancellation-requests', buildWorkerAuthConfig());
+            setCancellationRequests(Array.isArray(res.data) ? res.data : []);
+        } catch (err) {
+            setCancellationRequests([]);
+        } finally {
+            setCancellationRequestsLoading(false);
+        }
+    };
+
+    const handleCancellationAction = async (requestId, action) => {
+        setCancellationActionLoading(true);
+        try {
+            await axios.put(
+                `http://localhost:5000/api/admin/cancellation-requests/${requestId}`,
+                withWorkerIdentity({ action, adminUserId: userId }),
+                buildWorkerWriteConfig()
+            );
+
+            Swal.fire('Updated!', `Cancellation request ${action}ed`, 'success');
+            fetchCancellationRequests();
+            fetchOrders();
+            fetchCashRegisterData();
+        } catch (err) {
+            Swal.fire('Error', err.response?.data?.message || `Failed to ${action} cancellation request`, 'error');
+        } finally {
+            setCancellationActionLoading(false);
         }
     };
 
@@ -372,7 +461,6 @@ const WorkerDashboard = () => {
                 withWorkerIdentity({ status: status }),
                 buildWorkerWriteConfig()
             );
-            Swal.fire('Success', `Order ${status} successfully`, 'success');
             setShowOrderModal(false);
             setSelectedOrder(null);
             fetchOrders();
@@ -738,6 +826,61 @@ const WorkerDashboard = () => {
         return lowStockProducts.filter((p) => Number(p.stock || 0) <= 20).length;
     }, [lowStockProducts]);
 
+    const pendingCancellationRequests = useMemo(() => {
+        return cancellationRequests.filter((request) => String(request.status || '').toLowerCase() === 'pending');
+    }, [cancellationRequests]);
+
+    const pendingCancellationCountThisWeek = useMemo(() => {
+        const weekStart = getStartOfCurrentWeek();
+        return pendingCancellationRequests.filter((request) => {
+            const createdAt = new Date(request.created_at || request.request_time || 0);
+            return createdAt >= weekStart;
+        }).length;
+    }, [pendingCancellationRequests]);
+
+    const pendingCancellationByOrderId = useMemo(() => {
+        return pendingCancellationRequests.reduce((accumulator, request) => {
+            accumulator[request.order_id] = request;
+            return accumulator;
+        }, {});
+    }, [pendingCancellationRequests]);
+
+    const filteredInvoiceTransactions = useMemo(() => {
+        return transactionLog
+            .filter((tx) => String(tx.transaction_type || '').toLowerCase() === 'invoice')
+            .filter((tx) => {
+                const normalizedSearch = transactionSearch.toLowerCase();
+                const txDateKey = getTransactionDateKey(tx.timestamp || tx.created_at);
+                const txDateText = toSafeDate(tx.timestamp || tx.created_at).toLocaleDateString();
+
+                const matchesSearch =
+                    !normalizedSearch ||
+                    tx.customer_name?.toLowerCase().includes(normalizedSearch) ||
+                    tx.order_id?.toString().includes(transactionSearch) ||
+                    tx.description?.toLowerCase().includes(normalizedSearch) ||
+                    txDateKey.includes(normalizedSearch) ||
+                    txDateText.toLowerCase().includes(normalizedSearch);
+
+                return matchesSearch;
+            })
+            .sort((a, b) => toSafeDate(b.timestamp || b.created_at) - toSafeDate(a.timestamp || a.created_at));
+    }, [transactionLog, transactionSearch]);
+
+    const groupedInvoiceTransactions = useMemo(() => {
+        return filteredInvoiceTransactions.reduce((groups, tx) => {
+            const dateKey = getTransactionDateKey(tx.timestamp || tx.created_at);
+            if (!groups[dateKey]) {
+                groups[dateKey] = [];
+            }
+            groups[dateKey].push(tx);
+            return groups;
+        }, {});
+    }, [filteredInvoiceTransactions]);
+
+    const groupedInvoiceTransactionEntries = useMemo(() => {
+        return Object.entries(groupedInvoiceTransactions).sort(([dateA], [dateB]) => (dateA < dateB ? 1 : -1));
+    }, [groupedInvoiceTransactions]);
+
     const filteredCashierOrders = useMemo(() => {
         return cashierInvoiceQueue.filter((order) => {
             return !cashierFilters.search || 
@@ -997,11 +1140,14 @@ const WorkerDashboard = () => {
                     {lowStockAlertCount > 0 && <span className="tab-alert-badge">{lowStockAlertCount}</span>}
                 </button>
                 <button
-                    className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`}
+                    className={`tab-button ${activeTab === 'orders' ? 'active' : ''} tab-button-with-badge`}
                     onClick={() => setActiveTab('orders')}
                 >
                     <ShoppingCart size={18} />
                     Orders
+                    {pendingCancellationCountThisWeek > 0 && (
+                        <span className="tab-alert-badge">{pendingCancellationCountThisWeek > 99 ? '99+' : pendingCancellationCountThisWeek}</span>
+                    )}
                 </button>
                 <button
                     className={`tab-button ${activeTab === 'cash-register' ? 'active' : ''}`}
@@ -1164,6 +1310,64 @@ const WorkerDashboard = () => {
                 {activeTab === 'orders' && (
                     <div className="orders-section">
                         <h3>Order Management</h3>
+
+                        {cancellationRequestsLoading ? (
+                            <p className="loading-text">Loading cancellation requests...</p>
+                        ) : pendingCancellationRequests.length > 0 && (
+                            <div className="cancellation-requests-panel">
+                                <div className="cancellation-requests-header">
+                                    <div>
+                                        <h4>Cancellation Requests</h4>
+                                        <p>Pending client requests you can approve or reject.</p>
+                                    </div>
+                                    <span className="request-week-badge">New this week: {pendingCancellationCountThisWeek}</span>
+                                </div>
+
+                                <div className="sales-table-wrapper">
+                                    <table className="sales-table cancellation-requests-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Order</th>
+                                                <th>Customer</th>
+                                                <th>Reason</th>
+                                                <th>Requested</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {pendingCancellationRequests.map((request) => (
+                                                <tr key={request.request_id}>
+                                                    <td>#{request.order_id}</td>
+                                                    <td>{request.first_name} {request.last_name}</td>
+                                                    <td>{request.reason || 'No reason provided'}</td>
+                                                    <td>{new Date(request.created_at).toLocaleDateString()}</td>
+                                                    <td>
+                                                        <div className="cancellation-action-buttons">
+                                                            <button
+                                                                type="button"
+                                                                className="save-button small-action-button"
+                                                                onClick={() => handleCancellationAction(request.request_id, 'approve')}
+                                                                disabled={cancellationActionLoading}
+                                                            >
+                                                                Approve
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="cancel-button small-action-button"
+                                                                onClick={() => handleCancellationAction(request.request_id, 'reject')}
+                                                                disabled={cancellationActionLoading}
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                         
                         <div className="orders-filter-bar">
                             <input
@@ -1199,7 +1403,12 @@ const WorkerDashboard = () => {
                                     <div key={order.order_id} className="order-item" onClick={() => {setSelectedOrder(order); setShowOrderModal(true);}}>
                                         <div className="order-header">
                                             <span className="order-id">Order #{order.order_id}</span>
-                                            <span className={`order-status ${order.order_status}`}>{order.order_status}</span>
+                                            <div className="order-header-status-group">
+                                                {pendingCancellationByOrderId[order.order_id] && (
+                                                    <span className="order-cancel-request-badge">Cancellation pending</span>
+                                                )}
+                                                <span className={`order-status ${order.order_status}`}>{order.order_status}</span>
+                                            </div>
                                         </div>
                                         <div className="order-details">
                                             <p><strong>Customer:</strong> {order.customer_name}</p>
@@ -1471,7 +1680,7 @@ const WorkerDashboard = () => {
                     <div className="transaction-filter-bar">
                         <input
                             type="text"
-                            placeholder="Search transactions..."
+                            placeholder="Search by client name, order ID, or date..."
                             value={transactionSearch}
                             onChange={(e) => setTransactionSearch(e.target.value)}
                             className="products-search-input"
@@ -1481,37 +1690,46 @@ const WorkerDashboard = () => {
 
                     {transactionLoading ? (
                         <div className="loading">Loading transaction log...</div>
-                    ) : transactionLog.filter(tx => tx.transaction_type === 'invoice' && (
-                        tx.customer_name?.toLowerCase().includes(transactionSearch.toLowerCase()) ||
-                        tx.order_id?.toString().includes(transactionSearch) ||
-                        tx.description?.toLowerCase().includes(transactionSearch.toLowerCase())
-                    )).length === 0 ? (
+                    ) : filteredInvoiceTransactions.length === 0 ? (
                         <div className="no-data">No transactions recorded</div>
                     ) : (
                         <div className="transaction-list">
-                            {transactionLog
-                                .filter(tx => tx.transaction_type === 'invoice')
-                                .filter(tx =>
-                                    tx.customer_name?.toLowerCase().includes(transactionSearch.toLowerCase()) ||
-                                    tx.order_id?.toString().includes(transactionSearch) ||
-                                    tx.description?.toLowerCase().includes(transactionSearch.toLowerCase())
-                                )
-                                .map(tx => (
-                                    <div key={tx.transaction_id} className="transaction-log-item">
-                                        <div className="transaction-log-header">
-                                            <span className={`log-type ${tx.transaction_type}`}>
-                                                {tx.transaction_type?.toUpperCase()}
-                                            </span>
-                                            <span className="log-customer">{tx.customer_name}</span>
-                                            <span className="log-date">{new Date(tx.timestamp).toLocaleString()}</span>
-                                        </div>
-                                        <p className="log-description">{tx.description}</p>
-                                        <div className="log-details">
-                                            <span>Order: #{tx.order_id}</span>
-                                            <span>Amount: ₱{parseFloat(tx.amount).toFixed(2)}</span>
-                                        </div>
-                                    </div>
-                                ))}
+                            {groupedInvoiceTransactionEntries.map(([dateKey, entries]) => (
+                                <div key={dateKey} className="transaction-date-group">
+                                    <h4 className="transaction-date-heading">{formatTransactionDateHeading(dateKey)}</h4>
+                                    {entries.map((tx) => (
+                                        <button
+                                            type="button"
+                                            key={tx.transaction_id || `${tx.order_id}-${tx.timestamp}`}
+                                            className="transaction-log-item transaction-log-item-button"
+                                            onClick={() => {
+                                                if (!tx.order_id) {
+                                                    Swal.fire('Error', 'Order details are not available for this log item', 'error');
+                                                    return;
+                                                }
+                                                handleViewSalesOrderDetails(tx.order_id);
+                                            }}
+                                        >
+                                            <div className="transaction-log-header">
+                                                <span className={`log-type ${tx.transaction_type}`}>
+                                                    {tx.transaction_type?.toUpperCase()}
+                                                </span>
+                                                <span className="log-customer">{tx.customer_name}</span>
+                                                <span className="log-date">{new Date(tx.timestamp).toLocaleString()}</span>
+                                            </div>
+                                            <p className="log-description">{tx.description}</p>
+                                            <div className="log-details">
+                                                <span>Order: #{tx.order_id}</span>
+                                                <span>Amount: ₱{parseFloat(tx.amount).toFixed(2)}</span>
+                                            </div>
+                                            <div className="transaction-click-hint">
+                                                <Eye size={14} />
+                                                <span>View invoice details</span>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -1580,6 +1798,26 @@ const WorkerDashboard = () => {
                             >
                                 Close
                             </button>
+                            {selectedOrder && pendingCancellationByOrderId[selectedOrder.order_id] && (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="save-button"
+                                        disabled={orderProcessing || cancellationActionLoading}
+                                        onClick={() => handleCancellationAction(pendingCancellationByOrderId[selectedOrder.order_id].request_id, 'approve')}
+                                    >
+                                        Approve Cancellation
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="cancel-button"
+                                        disabled={orderProcessing || cancellationActionLoading}
+                                        onClick={() => handleCancellationAction(pendingCancellationByOrderId[selectedOrder.order_id].request_id, 'reject')}
+                                    >
+                                        Reject Cancellation
+                                    </button>
+                                </>
+                            )}
                             {selectedOrder.order_status === 'pending' && (
                                 <button
                                     onClick={() => handleProcessOrder('pending')}

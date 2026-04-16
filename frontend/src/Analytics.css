@@ -1,7 +1,7 @@
 .analytics-container {
-    min-height: 100vh;
+    min-height: auto;
     background: #eef2ff;
-    padding: 24px 16px;
+    padding: 16px 14px;
 }
 
 .analytics-loading {
@@ -72,8 +72,8 @@
 
 .analytics-panel {
     border-radius: 14px;
-    padding: 18px;
-    min-height: 520px;
+    padding: 14px;
+    min-height: 340px;
     display: flex;
     flex-direction: column;
     box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
@@ -194,78 +194,204 @@
 }
 
 .sales-chart-card {
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 10px;
-    padding: 12px;
-    flex: 1;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border: 1px solid #dbe5f1;
+    border-radius: 12px;
+    padding: 14px;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
+    position: relative;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .sales-chart-card h3 {
-    margin: 0 0 10px 0;
-    color: #111827;
-    font-size: 1rem;
-    font-weight: 700;
+    margin: 0 0 12px 0;
+    color: #0f172a;
+    font-size: 1.02rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
 }
 
 .chart-container {
-    flex: 1;
-}
-
-.chart-bars {
-    display: flex;
-    align-items: end;
-    gap: 8px;
-    height: 100%;
-    min-height: 250px;
-    padding: 12px 0;
-    border-bottom: 2px solid #e5e7eb;
-    border-left: 2px solid #e5e7eb;
-}
-
-.chart-bar-container {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 6px;
-}
-
-.chart-bar {
-    width: 100%;
-    max-width: 42px;
-    background: linear-gradient(180deg, #10b981, #059669);
-    border-radius: 4px 4px 0 0;
+    gap: 12px;
     position: relative;
-    display: flex;
-    align-items: end;
-    justify-content: center;
-    color: #ffffff;
-    font-size: 10px;
+}
+
+.line-chart-container {
+    min-height: 292px;
+    position: relative;
+}
+
+.chart-scroll-x {
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #94a3b8 #e5e7eb;
+}
+
+.chart-scroll-x.no-scroll {
+    overflow-x: hidden;
+}
+
+.chart-scroll-x::-webkit-scrollbar {
+    height: 8px;
+}
+
+.chart-scroll-x::-webkit-scrollbar-track {
+    background: #e5e7eb;
+    border-radius: 999px;
+}
+
+.chart-scroll-x::-webkit-scrollbar-thumb {
+    background: linear-gradient(90deg, #3b82f6, #10b981);
+    border-radius: 999px;
+}
+
+.chart-scroll-x::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(90deg, #2563eb, #059669);
+}
+
+.chart-plot {
+    min-width: 100%;
+    position: relative;
+    border: 1px solid #d9e2ef;
+    border-radius: 10px;
+    background:
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.95), rgba(248, 250, 252, 0.95)),
+        repeating-linear-gradient(
+            to bottom,
+            rgba(148, 163, 184, 0.18) 0,
+            rgba(148, 163, 184, 0.18) 1px,
+            transparent 1px,
+            transparent 56px
+        );
+    padding: 8px 8px 10px;
+}
+
+.chart-stage {
+    position: relative;
+    height: 220px;
+    overflow: visible;
+}
+
+.sales-line-chart {
+    width: 100%;
+    flex: 0 0 auto;
+    height: 220px;
+    min-height: 220px;
+    max-height: 220px;
+    display: block;
+    overflow: hidden;
+}
+
+.chart-axis {
+    stroke: #cbd5e1;
+    stroke-width: 0.8;
+}
+
+.sales-line-area {
+    opacity: 1;
+}
+
+.sales-line-path {
+    filter: drop-shadow(0 3px 6px rgba(37, 99, 235, 0.14));
+}
+
+.sales-line-point {
+    fill: #ffffff;
+    stroke: #2563eb;
+    stroke-width: 1.4;
+    transition: transform 0.15s ease, fill 0.15s ease;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.sales-line-point:hover {
+    fill: #dbeafe;
+    transform: scale(1.2);
+}
+
+.line-chart-labels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(44px, 1fr));
+    gap: 0;
+    margin-top: 6px;
+}
+
+.line-chart-label {
+    text-align: center;
+    font-size: 12px;
+    color: #1e293b;
     font-weight: 700;
-    padding: 5px;
-    min-height: 20px;
-    transition: transform 0.2s ease;
-}
-
-.chart-bar:hover {
-    transform: scale(1.04);
-}
-
-.bar-value {
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
     white-space: nowrap;
-    font-size: 10px;
 }
 
-.bar-label {
-    font-size: 11px;
+.chart-scroll-indicator {
+    margin-top: 2px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.scroll-arrow {
+    color: #2563eb;
+    font-size: 13px;
+    line-height: 1;
+}
+
+.chart-tooltip-floating {
+    position: absolute;
+    background: #ffffff;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    padding: 8px 12px;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.14);
+    white-space: nowrap;
+    z-index: 50;
+    pointer-events: none;
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.tooltip-label {
+    font-size: 13px;
+    color: #000000;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.tooltip-sales {
+    font-size: 13px;
+    color: #000000;
+    font-weight: 800;
+}
+
+.tooltip-orders {
+    font-size: 12px;
     color: #4b5563;
     font-weight: 600;
-    text-align: center;
+    margin-top: 2px;
 }
 
 .no-data {
@@ -281,7 +407,7 @@
     }
 
     .analytics-panel {
-        min-height: 460px;
+        min-height: 380px;
     }
 }
 
@@ -310,8 +436,27 @@
         padding-left: 58px;
     }
 
-    .chart-bars {
-        min-height: 220px;
-        gap: 5px;
+    .line-chart-container {
+        min-height: 252px;
+    }
+
+    .sales-line-chart {
+        height: 186px;
+        min-height: 186px;
+        max-height: 186px;
+    }
+
+    .chart-stage {
+        height: 186px;
+    }
+
+    .line-chart-labels {
+        grid-template-columns: repeat(auto-fit, minmax(38px, 1fr));
+    }
+
+    .line-chart-label {
+        font-size: 12px;
+        font-weight: 800;
+        color: #000000;
     }
 }

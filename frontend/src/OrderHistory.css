@@ -22,7 +22,7 @@
     border-radius: 18px;
     padding: 16px 18px;
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: minmax(150px, auto) 1fr minmax(150px, auto);
     align-items: center;
     gap: 12px;
 }
@@ -35,18 +35,26 @@
     text-align: center;
 }
 
+.order-header-title {
+    text-align: center;
+    grid-column: 2;
+}
+
 .order-header-left,
 .order-header-right {
     display: flex;
     align-items: center;
+    gap: 12px;
 }
 
 .order-header-left {
     justify-content: flex-start;
+    grid-column: 1;
 }
 
 .order-header-right {
     justify-content: flex-end;
+    grid-column: 3;
 }
 
 .back-button {
@@ -67,6 +75,30 @@
 .back-button:hover {
     transform: translateX(-4px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.order-header-cart-button {
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.36);
+    background: rgba(255, 255, 255, 0.2);
+    color: #083344;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.order-header-cart-button:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.back-button:active,
+.order-header-cart-button:active {
+    transform: scale(0.98);
 }
 
 .orders-panel {
@@ -189,10 +221,16 @@
     color: #0f172a;
 }
 
-.print-btn {
+.details-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.print-btn,
+.cancel-order-btn {
     border: none;
     border-radius: 8px;
-    background: #2563eb;
     color: #ffffff;
     padding: 8px 12px;
     display: inline-flex;
@@ -200,10 +238,33 @@
     gap: 6px;
     cursor: pointer;
     font-weight: 700;
+    transition: all 0.3s ease;
+    font-size: 14px;
+}
+
+.print-btn {
+    background: #2563eb;
 }
 
 .print-btn:hover {
     background: #1d4ed8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+}
+
+.cancel-order-btn {
+    background: #dc2626;
+}
+
+.cancel-order-btn:hover {
+    background: #b91c1c;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+.cancel-order-btn:active,
+.print-btn:active {
+    transform: translateY(0);
 }
 
 .details-loading {

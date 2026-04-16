@@ -8,7 +8,7 @@ import './Checkout.css';
 const Checkout = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { cartItems, subtotal, discountedSubtotal, discountAmount, discountRate, shippingFee, tax, total } = location.state || {};
+    const { cartItems, subtotal, discountedSubtotal, discountAmount, discountRate, tax, total } = location.state || {};
     const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     
     const user = JSON.parse(localStorage.getItem('user'));
@@ -244,10 +244,6 @@ const Checkout = () => {
                             <div className="breakdown-row">
                                 <span>Discounted Subtotal:</span>
                                 <span>₱{discountedSubtotal.toFixed(2)}</span>
-                            </div>
-                            <div className="breakdown-row">
-                                <span>Shipping:</span>
-                                <span>{shippingFee === 0 ? 'FREE' : `₱${shippingFee.toFixed(2)}`}</span>
                             </div>
                             <div className="breakdown-row total">
                                 <span>Total:</span>

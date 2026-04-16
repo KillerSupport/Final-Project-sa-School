@@ -7,6 +7,26 @@ import UserManagement from './UserManagement';
 import Analytics from './Analytics';
 import './AdminDashboard.css';
 
+const toSafeDate = (value) => {
+    const date = new Date(value || 0);
+    return Number.isNaN(date.getTime()) ? new Date(0) : date;
+};
+
+const getOrderLogDateKey = (value) => {
+    const date = toSafeDate(value);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const formatOrderLogDateHeading = (dateKey) => {
+    const date = toSafeDate(dateKey);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+};
+
 const AdminDashboard = () => {
     const navigate = useNavigate();
     const productCategoryOptions = ['Salt Water Fish', 'Fresh Water Fish', 'Supplies'];
@@ -29,9 +49,14 @@ const AdminDashboard = () => {
     const [userLogSearch, setUserLogSearch] = useState('');
     const [orderLogSearch, setOrderLogSearch] = useState('');
     const [orderLogStatusFilter, setOrderLogStatusFilter] = useState('all');
+    const [orderSearch, setOrderSearch] = useState('');
     const [logsLoading, setLogsLoading] = useState(false);
+    const [showOrderLogDetailsModal, setShowOrderLogDetailsModal] = useState(false);
+    const [selectedOrderLogDetails, setSelectedOrderLogDetails] = useState(null);
+    const [orderLogDetailsLoading, setOrderLogDetailsLoading] = useState(false);
     const [lowStockProducts, setLowStockProducts] = useState([]);
     const [cancellationRequests, setCancellationRequests] = useState([]);
+    const [cancellationRequestCount, setCancellationRequestCount] = useState(0);
     const [verificationRequestCount, setVerificationRequestCount] = useState(0);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -50,52 +75,14 @@ const AdminDashboard = () => {
     const [uploading, setUploading] = useState(false);
     const [addingStockProductId, setAddingStockProductId] = useState(null);
     const [addingStockQuantity, setAddingStockQuantity] = useState('');
-
-    useEffect(() => {
-        localStorage.setItem('adminActiveTab', activeTab);
-    }, [activeTab]);
-
-    const [bestSellers, setBestSellers] = useState([]);
-    const [analyticsPeriod, setAnalyticsPeriod] = useState('weekly');
-    const [analyticsLoading, setAnalyticsLoading] = useState(false);
-
-    const fetchBestSellers = async (period = 'weekly') => {
-        setAnalyticsLoading(true);
-        try {
-            const res = await axios.get(`http://localhost:5000/api/admin/analytics/best-sellers?period=${period}`);
-            setBestSellers(res.data.bestSellers || []);
-        } catch (err) {
-            setBestSellers([]);
-        } finally {
-            setAnalyticsLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (activeTab === 'dashboard') fetchBestSellers(analyticsPeriod);
-    }, [activeTab, analyticsPeriod]);
-
-    useEffect(() => {
-        if (activeTab === 'website-settings') {
-            axios.get('http://localhost:5000/api/background-settings')
-                .then(res => {
-                    const setting = Array.isArray(res.data)
-                        ? res.data.find((item) => item.setting_name === 'client_background')
-                        : null;
-                    setWebsiteBgUrl(setting?.setting_value || '');
-                })
-                .catch(() => setWebsiteBgUrl(''));
-        }
-    }, [activeTab]);
-
-    const [showProfileModal, setShowProfileModal] = useState(false);
-    const [profileEdit, setProfileEdit] = useState({ first_name: '', last_name: '', email: '' });
     const [profileLoading, setProfileLoading] = useState(false);
     const [passwordEdit, setPasswordEdit] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
     const [passwordLoading, setPasswordLoading] = useState(false);
     const [showOldPassword, setShowOldPassword] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const [profileEdit, setProfileEdit] = useState({ first_name: '', last_name: '', email: '' });
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userId = user?.user_id;
     const userRole = user?.role_name || 'Admin';
@@ -198,6 +185,32 @@ const AdminDashboard = () => {
             return String(left.name || '').localeCompare(String(right.name || ''));
         });
     }, [deletedProducts, deletedProductSearch, deletedProductSortOrder]);
+
+    const visibleOrders = useMemo(() => {
+        const searchTerm = orderSearch.trim().toLowerCase();
+
+        if (!searchTerm) {
+            return orders;
+        }
+
+        return orders.filter((order) => {
+            const orderId = String(order.order_id || '');
+            const customerName = `${String(order.first_name || '')} ${String(order.last_name || '')}`.trim().toLowerCase();
+            const customerEmail = String(order.email || '').toLowerCase();
+
+            const createdAt = new Date(order.created_at || 0);
+            const dateText = createdAt.toLocaleDateString().toLowerCase();
+            const isoDate = `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}-${String(createdAt.getDate()).padStart(2, '0')}`;
+
+            return (
+                orderId.includes(searchTerm) ||
+                customerName.includes(searchTerm) ||
+                customerEmail.includes(searchTerm) ||
+                dateText.includes(searchTerm) ||
+                isoDate.includes(searchTerm)
+            );
+        });
+    }, [orders, orderSearch]);
 
     const fetchProducts = async () => {
         try {
@@ -379,6 +392,49 @@ const AdminDashboard = () => {
         });
     }, [orderLogs, orderLogSearch, orderLogStatusFilter]);
 
+    const groupedVisibleOrderLogEntries = useMemo(() => {
+        const sortedLogs = [...visibleOrderLogs].sort((left, right) => {
+            const leftDate = toSafeDate(left.order_updated_at || left.order_created_at);
+            const rightDate = toSafeDate(right.order_updated_at || right.order_created_at);
+            return rightDate - leftDate;
+        });
+
+        const grouped = sortedLogs.reduce((accumulator, log) => {
+            const key = getOrderLogDateKey(log.order_updated_at || log.order_created_at);
+            if (!accumulator[key]) {
+                accumulator[key] = [];
+            }
+            accumulator[key].push(log);
+            return accumulator;
+        }, {});
+
+        return Object.entries(grouped).sort(([leftKey], [rightKey]) => (leftKey < rightKey ? 1 : -1));
+    }, [visibleOrderLogs]);
+
+    const handleViewOrderLogDetails = async (orderId) => {
+        if (!orderId) {
+            Swal.fire('Error', 'Order details are not available for this log item', 'error');
+            return;
+        }
+
+        setShowOrderLogDetailsModal(true);
+        setOrderLogDetailsLoading(true);
+        setSelectedOrderLogDetails(null);
+
+        try {
+            const res = await axios.get(`http://localhost:5000/api/worker/sales-history/${orderId}/details`, {
+                params: { userId },
+                headers: userId ? { 'x-user-id': String(userId) } : {}
+            });
+            setSelectedOrderLogDetails(res.data || null);
+        } catch (err) {
+            setShowOrderLogDetailsModal(false);
+            Swal.fire('Error', err.response?.data?.message || 'Failed to load order log details', 'error');
+        } finally {
+            setOrderLogDetailsLoading(false);
+        }
+    };
+
     const openProfileModal = async () => {
         if (user && user.user_id) {
             setProfileLoading(true);
@@ -467,6 +523,43 @@ const AdminDashboard = () => {
     };
 
     useEffect(() => {
+        localStorage.setItem('adminActiveTab', activeTab);
+    }, [activeTab]);
+
+    const [bestSellers, setBestSellers] = useState([]);
+    const [analyticsPeriod, setAnalyticsPeriod] = useState('weekly');
+    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+    const fetchBestSellers = async (period = 'weekly') => {
+        setAnalyticsLoading(true);
+        try {
+            const res = await axios.get(`http://localhost:5000/api/admin/analytics/best-sellers?period=${period}`);
+            setBestSellers(res.data.bestSellers || []);
+        } catch (err) {
+            setBestSellers([]);
+        } finally {
+            setAnalyticsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (activeTab === 'dashboard') fetchBestSellers(analyticsPeriod);
+    }, [activeTab, analyticsPeriod]);
+
+    useEffect(() => {
+        if (activeTab === 'website-settings') {
+            axios.get('http://localhost:5000/api/background-settings')
+                .then(res => {
+                    const setting = Array.isArray(res.data)
+                        ? res.data.find((item) => item.setting_name === 'client_background')
+                        : null;
+                    setWebsiteBgUrl(setting?.setting_value || '');
+                })
+                .catch(() => setWebsiteBgUrl(''));
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
         // Only fetch data when respective tab is active
         if (activeTab === 'products') {
             fetchProducts();
@@ -486,9 +579,21 @@ const AdminDashboard = () => {
     useEffect(() => {
         fetchLowStockProducts();
         fetchVerificationRequestCount();
+        fetchCancellationRequestCount();
+        // Load profile image on mount
+        if (userId) {
+            axios.get(`http://localhost:5000/api/user-profile/${userId}`)
+                .then(res => {
+                    setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
+                })
+                .catch(() => {
+                    setProfileImagePreview(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
+                });
+        }
 
         const intervalId = setInterval(() => {
             fetchVerificationRequestCount();
+            fetchCancellationRequestCount();
         }, 15000);
 
         return () => clearInterval(intervalId);
@@ -504,12 +609,32 @@ const AdminDashboard = () => {
     const fetchCancellationRequests = async () => {
         try {
             const response = await axios.get(`http://localhost:5000/api/admin/cancellation-requests?userId=${userId}`);
-            setCancellationRequests(response.data);
+            const requests = Array.isArray(response.data) ? response.data : [];
+            setCancellationRequests(requests);
+            setCancellationRequestCount(
+                requests.filter((request) => String(request.status || '').toLowerCase() === 'pending').length
+            );
         } catch (error) {
             console.error('Error fetching cancellation requests:', error);
             Swal.fire('Error', 'Failed to fetch cancellation requests', 'error');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchCancellationRequestCount = async () => {
+        if (!userId) return;
+
+        try {
+            const response = await axios.get('http://localhost:5000/api/admin/cancellation-requests', {
+                params: { userId }
+            });
+            const requests = Array.isArray(response.data) ? response.data : [];
+            setCancellationRequestCount(
+                requests.filter((request) => String(request.status || '').toLowerCase() === 'pending').length
+            );
+        } catch {
+            setCancellationRequestCount(0);
         }
     };
 
@@ -819,8 +944,9 @@ const AdminDashboard = () => {
 
     const handleCancellationAction = async (requestId, action) => {
         try {
-            await axios.put(`http://localhost:5000/api/cancellation-requests/${requestId}`, {
-                status: action
+            await axios.put(`http://localhost:5000/api/admin/cancellation-requests/${requestId}`, {
+                action,
+                adminUserId: userId
             });
             Swal.fire({
                 title: 'Updated!',
@@ -982,8 +1108,8 @@ const AdminDashboard = () => {
 
             {/* Tab Navigation */}
             <div className="tabs-container">
-                <button className={`tab-button ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-                <button className={`tab-button ${activeTab === 'products' ? 'active' : ''}`} onClick={() => setActiveTab('products')}>Products</button>
+                <button className={`tab-button tab-button-compact ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+                <button className={`tab-button tab-button-compact ${activeTab === 'products' ? 'active' : ''}`} onClick={() => setActiveTab('products')}>Products</button>
                 <button className={`tab-button tab-button-with-badge ${activeTab === 'low-stock' ? 'active' : ''}`} onClick={() => setActiveTab('low-stock')}>
                     Low Stock Alerts
                     {lowStockAlertCount > 0 && (
@@ -991,7 +1117,12 @@ const AdminDashboard = () => {
                     )}
                 </button>
                 <button className={`tab-button ${activeTab === 'orders' ? 'active' : ''}`} onClick={() => setActiveTab('orders')}>Order Management</button>
-                <button className={`tab-button ${activeTab === 'cancellations' ? 'active' : ''}`} onClick={() => setActiveTab('cancellations')}>Cancellation Requests</button>
+                <button className={`tab-button tab-button-wide tab-button-with-badge ${activeTab === 'cancellations' ? 'active' : ''}`} onClick={() => setActiveTab('cancellations')}>
+                    Cancellation Requests
+                    {cancellationRequestCount > 0 && (
+                        <span className="tab-alert-badge">{cancellationRequestCount > 99 ? '99+' : cancellationRequestCount}</span>
+                    )}
+                </button>
                 <button className={`tab-button ${activeTab === 'analytics' ? 'active' : ''}`} onClick={() => setActiveTab('analytics')}>Analytics & Reports</button>
                 <button className={`tab-button tab-button-with-badge ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}>
                     User Management
@@ -1359,51 +1490,105 @@ const AdminDashboard = () => {
                     ) : visibleOrderLogs.length === 0 ? (
                         <div className="logs-empty">No order logs found.</div>
                     ) : (
-                        <div className="logs-table-container">
-                            <table className="logs-table">
-                                <thead>
-                                    <tr>
-                                        <th>Order ID</th>
-                                        <th>Customer</th>
-                                        <th>Total</th>
-                                        <th>Status</th>
-                                        <th>Item Count</th>
-                                        <th>Created Date</th>
-                                        <th>Created Time</th>
-                                        <th>Updated Date</th>
-                                        <th>Updated Time</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {visibleOrderLogs.map((log) => {
-                                        const createdAt = new Date(log.order_created_at);
-                                        const updatedAt = new Date(log.order_updated_at);
+                        <div className="admin-order-log-list">
+                            {groupedVisibleOrderLogEntries.map(([dateKey, entries]) => (
+                                <div key={dateKey} className="admin-order-log-date-group">
+                                    <h4 className="admin-order-log-date-heading">{formatOrderLogDateHeading(dateKey)}</h4>
+                                    {entries.map((log) => {
+                                        const createdAt = toSafeDate(log.order_created_at);
+                                        const updatedAt = toSafeDate(log.order_updated_at);
                                         const finalStatus = String(log.final_status || 'Paid');
+
                                         return (
-                                            <tr key={log.order_id}>
-                                                <td>#{log.order_id}</td>
-                                                <td>
-                                                    <div className="customer-info">
-                                                        <div className="customer-name">{log.customer_name}</div>
-                                                        <div className="customer-email">{log.customer_email}</div>
-                                                    </div>
-                                                </td>
-                                                <td>₱{Number(log.total_amount || 0).toFixed(2)}</td>
-                                                <td>
+                                            <button
+                                                type="button"
+                                                key={`admin-order-log-${log.order_id}-${log.order_updated_at || log.order_created_at}`}
+                                                className="admin-order-log-card"
+                                                onClick={() => handleViewOrderLogDetails(log.order_id)}
+                                            >
+                                                <div className="admin-order-log-header">
+                                                    <span className="admin-order-log-id">Order #{log.order_id}</span>
+                                                    <span className="admin-order-log-customer">{log.customer_name}</span>
+                                                    <span className="admin-order-log-date">{updatedAt.toLocaleString()}</span>
+                                                </div>
+                                                <p className="admin-order-log-desc">
+                                                    {log.customer_email} | Created: {createdAt.toLocaleDateString()} {createdAt.toLocaleTimeString()}
+                                                </p>
+                                                <div className="admin-order-log-details">
+                                                    <span>Total: ₱{Number(log.total_amount || 0).toFixed(2)}</span>
+                                                    <span>Items: {Number(log.items_count || 0)}</span>
                                                     <span className={`order-status ${String(finalStatus).toLowerCase()}`}>{finalStatus}</span>
-                                                </td>
-                                                <td>{Number(log.items_count || 0)}</td>
-                                                <td>{createdAt.toLocaleDateString()}</td>
-                                                <td>{createdAt.toLocaleTimeString()}</td>
-                                                <td>{updatedAt.toLocaleDateString()}</td>
-                                                <td>{updatedAt.toLocaleTimeString()}</td>
-                                            </tr>
+                                                </div>
+                                                <div className="admin-order-log-hint">Click to view invoice/order details</div>
+                                            </button>
                                         );
                                     })}
-                                </tbody>
-                            </table>
+                                </div>
+                            ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {showOrderLogDetailsModal && (
+                <div className="modal-overlay" onClick={() => setShowOrderLogDetailsModal(false)}>
+                    <div className="modal-content admin-order-log-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Order Log Details</h3>
+
+                        {orderLogDetailsLoading ? (
+                            <p className="logs-empty">Loading details...</p>
+                        ) : !selectedOrderLogDetails ? (
+                            <p className="logs-empty">No details available.</p>
+                        ) : (
+                            <>
+                                <div className="admin-order-log-grid">
+                                    <p><strong>Order ID:</strong> #{selectedOrderLogDetails.order?.order_id}</p>
+                                    <p><strong>Customer:</strong> {selectedOrderLogDetails.order?.customer_name || '-'}</p>
+                                    <p><strong>Email:</strong> {selectedOrderLogDetails.order?.email || '-'}</p>
+                                    <p><strong>Contact:</strong> {selectedOrderLogDetails.order?.contact_number || '-'}</p>
+                                    <p><strong>Status:</strong> {selectedOrderLogDetails.order?.status || '-'}</p>
+                                    <p><strong>Payment Method:</strong> {selectedOrderLogDetails.order?.payment_method || '-'}</p>
+                                    <p><strong>Invoice Number:</strong> {selectedOrderLogDetails.invoice?.invoice_number || '-'}</p>
+                                    <p><strong>Updated:</strong> {selectedOrderLogDetails.order?.updated_at ? new Date(selectedOrderLogDetails.order.updated_at).toLocaleString() : '-'}</p>
+                                </div>
+
+                                <div className="sales-table-wrapper" style={{ marginTop: 12 }}>
+                                    <table className="sales-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Product</th>
+                                                <th>Qty</th>
+                                                <th>Unit Price</th>
+                                                <th>Line Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(selectedOrderLogDetails.items || []).map((item) => (
+                                                <tr key={`admin-order-item-${item.order_item_id}`}>
+                                                    <td>{item.product_name}</td>
+                                                    <td>{item.quantity}</td>
+                                                    <td>₱{Number(item.price || 0).toFixed(2)}</td>
+                                                    <td>₱{Number(item.line_total || 0).toFixed(2)}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="admin-order-log-grid" style={{ marginTop: 12 }}>
+                                    <p><strong>Subtotal:</strong> ₱{Number(selectedOrderLogDetails.summary?.subtotal || 0).toFixed(2)}</p>
+                                    <p><strong>Discount:</strong> -₱{Number(selectedOrderLogDetails.summary?.discount || 0).toFixed(2)}</p>
+                                    <p><strong>Total:</strong> ₱{Number(selectedOrderLogDetails.summary?.total || 0).toFixed(2)}</p>
+                                </div>
+                            </>
+                        )}
+
+                        <div className="modal-actions">
+                            <button type="button" className="btn-secondary" onClick={() => setShowOrderLogDetailsModal(false)}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
             {/* Orders Tab */}
@@ -1413,6 +1598,17 @@ const AdminDashboard = () => {
                         <h2>📋 Orders</h2>
                         <p>Manage customer orders and update their status</p>
                     </div>
+
+                    <div className="products-filter-bar" style={{ marginTop: 12 }}>
+                        <input
+                            type="text"
+                            className="products-search-input"
+                            placeholder="Search by client name, order date, or order ID"
+                            value={orderSearch}
+                            onChange={(e) => setOrderSearch(e.target.value)}
+                        />
+                    </div>
+
                     {/* Orders Table */}
                     <div className="orders-table-container">
                         <table className="orders-table">
@@ -1427,7 +1623,7 @@ const AdminDashboard = () => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {orders.map(order => (
+                                {visibleOrders.map(order => (
                                     <tr key={order.order_id}>
                                         <td>#{order.order_id}</td>
                                         <td>
@@ -1461,7 +1657,7 @@ const AdminDashboard = () => {
                             </tbody>
                         </table>
                     </div>
-                    {orders.length === 0 && (
+                    {visibleOrders.length === 0 && (
                         <div className="no-data">
                             <p>No orders found</p>
                         </div>
@@ -1595,6 +1791,7 @@ const AdminDashboard = () => {
                                     <th>Customer</th>
                                     <th>Reason</th>
                                     <th>Status</th>
+                                    <th>Reviewed By</th>
                                     <th>Request Date</th>
                                     <th>Actions</th>
                                 </tr>
@@ -1602,7 +1799,7 @@ const AdminDashboard = () => {
                             <tbody>
                                 {cancellationRequests.length === 0 ? (
                                     <tr>
-                                        <td colSpan="7" className="empty-state">No cancellation requests</td>
+                                        <td colSpan="8" className="empty-state">No cancellation requests</td>
                                     </tr>
                                 ) : (
                                     cancellationRequests.map(request => (
@@ -1623,20 +1820,27 @@ const AdminDashboard = () => {
                                                     {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
                                                 </span>
                                             </td>
+                                            <td>
+                                                {request.reviewed_by_first_name || request.reviewed_by_last_name
+                                                    ? `${request.reviewed_by_first_name || ''} ${request.reviewed_by_last_name || ''}`.trim()
+                                                    : request.status === 'pending'
+                                                        ? 'Pending'
+                                                        : '-'}
+                                            </td>
                                             <td>{new Date(request.created_at).toLocaleDateString()}</td>
                                             <td className="actions">
                                                 {request.status === 'pending' && (
                                                     <>
                                                         <button
                                                             className="btn-icon approve"
-                                                            onClick={() => handleCancellationAction(request.request_id, 'approved')}
+                                                            onClick={() => handleCancellationAction(request.request_id, 'approve')}
                                                             title="Approve cancellation"
                                                         >
                                                             ✓
                                                         </button>
                                                         <button
                                                             className="btn-icon reject"
-                                                            onClick={() => handleCancellationAction(request.request_id, 'denied')}
+                                                            onClick={() => handleCancellationAction(request.request_id, 'reject')}
                                                             title="Deny cancellation"
                                                         >
                                                             ✗

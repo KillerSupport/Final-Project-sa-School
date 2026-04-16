@@ -103,6 +103,16 @@ const ProductCatalog = () => {
 
     useEffect(() => {
         fetchProducts();
+        // Load profile image on mount
+        if (userId) {
+            axios.get(`http://localhost:5000/api/user-profile/${userId}`)
+                .then(res => {
+                    setProfileImagePreview(res.data.profile_image_url || res.data.id_image_url || localStorage.getItem(profileImageStorageKey) || '');
+                })
+                .catch(() => {
+                    setProfileImagePreview(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
+                });
+        }
     }, []);
 
     useEffect(() => {

@@ -188,36 +188,38 @@ const Cart = () => {
                                         <p>Price: ₱{Number(item.price).toFixed(2)}</p>
                                         <p className="stock-note">● In Stock ({item.stock} Pcs)</p>
                                     </div>
-                                    <button
-                                        className="btn-remove compact-remove"
-                                        onClick={() => handleRemoveItem(item.cart_id)}
-                                        title="Remove item"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
                                 </div>
 
                                 <div className="item-price modern-item-price">₱{Number(item.price).toFixed(2)}</div>
 
-                                <div className="item-quantity modern-item-quantity">
+                                <div className="item-quantity-with-remove">
+                                    <div className="item-quantity modern-item-quantity">
+                                        <button
+                                            onClick={() => handleUpdateQuantity(item.cart_id, item.quantity - 1)}
+                                            disabled={item.quantity <= 1}
+                                        >
+                                            <Minus size={14} />
+                                        </button>
+                                        <input
+                                            type="number"
+                                            value={item.quantity}
+                                            onChange={(e) => handleUpdateQuantity(item.cart_id, parseInt(e.target.value, 10) || 1)}
+                                            min="1"
+                                            max={item.stock}
+                                        />
+                                        <button
+                                            onClick={() => handleUpdateQuantity(item.cart_id, item.quantity + 1)}
+                                            disabled={item.quantity >= item.stock}
+                                        >
+                                            <Plus size={14} />
+                                        </button>
+                                    </div>
                                     <button
-                                        onClick={() => handleUpdateQuantity(item.cart_id, item.quantity - 1)}
-                                        disabled={item.quantity <= 1}
+                                        className="btn-remove-beside-quantity"
+                                        onClick={() => handleRemoveItem(item.cart_id)}
+                                        title="Remove item"
                                     >
-                                        <Minus size={14} />
-                                    </button>
-                                    <input
-                                        type="number"
-                                        value={item.quantity}
-                                        onChange={(e) => handleUpdateQuantity(item.cart_id, parseInt(e.target.value, 10) || 1)}
-                                        min="1"
-                                        max={item.stock}
-                                    />
-                                    <button
-                                        onClick={() => handleUpdateQuantity(item.cart_id, item.quantity + 1)}
-                                        disabled={item.quantity >= item.stock}
-                                    >
-                                        <Plus size={14} />
+                                        <Trash2 size={18} />
                                     </button>
                                 </div>
 

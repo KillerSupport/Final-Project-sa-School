@@ -203,6 +203,64 @@
     gap: 0.5rem;
 }
 
+.cancellation-requests-panel {
+    background: linear-gradient(180deg, rgba(254, 242, 242, 0.92), rgba(255, 255, 255, 0.98));
+    border: 1px solid #fecaca;
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 10px 24px rgba(220, 38, 38, 0.08);
+}
+
+.cancellation-requests-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.cancellation-requests-header h4 {
+    margin: 0;
+    color: #991b1b;
+    font-size: 1rem;
+}
+
+.cancellation-requests-header p {
+    margin: 0.25rem 0 0;
+    color: #7f1d1d;
+    font-size: 0.9rem;
+}
+
+.request-week-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.4rem 0.75rem;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 0.85rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.cancellation-requests-table td:last-child {
+    width: 220px;
+}
+
+.cancellation-action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.small-action-button {
+    min-width: 92px;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.85rem;
+}
+
 /* Products Filter Bar */
 .products-filter-bar,
 .orders-filter-bar,
@@ -460,6 +518,25 @@
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
+}
+
+.order-header-status-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.order-cancel-request-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    background: #fee2e2;
+    color: #991b1b;
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .order-id {
@@ -2468,6 +2545,42 @@
     flex-wrap: wrap;
     font-size: 0.9rem;
     color: #4b5563;
+}
+
+.transaction-date-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.transaction-date-heading {
+    margin: 0.2rem 0 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: #1f2937;
+    letter-spacing: 0.01em;
+}
+
+.transaction-log-item-button {
+    width: 100%;
+    text-align: left;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+}
+
+.transaction-log-item-button:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.transaction-click-hint {
+    margin-top: 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 700;
 }
 
 .worker-header-flex {

@@ -105,7 +105,6 @@ function buildInvoicePdf(order, customer, items, invoiceNumber, filePath, meta =
         stream.on('error', reject);
     });
 }
-
 // Configure multer for file uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -1714,7 +1713,7 @@ function sendPaymentConfirmationInvoiceEmail(orderId, requestedByUserId, callbac
                         <p>Your in-store payment for <strong>Order #${payload.order_id}</strong> has been confirmed.</p>
                         <p><strong>Invoice Number:</strong> ${payload.invoice_number}</p>
                         <p><strong>Total Amount:</strong> PHP ${Number(payload.total_amount || 0).toFixed(2)}</p>
-                        <p><strong>Payment Method:</strong> ${payload.payment_method || 'cash_on_store'}</p>
+                        <p><strong>Prepared By:</strong> ${payload.issued_by_name || 'Store Staff'}</p>
                         <p><strong>Payment Confirmed By:</strong> ${payload.paid_by_name || 'Store Staff'}</p>
                         <p>Your updated invoice PDF is available here:</p>
                         <p><a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer">Download Updated Invoice PDF</a></p>
@@ -2475,7 +2474,7 @@ app.get('/api/worker/cash-register/order/:orderId/details', checkRole(['admin', 
         SELECT o.order_id, o.user_id, o.status, o.created_at, o.payment_method, o.total_amount,
                u.first_name, u.last_name, u.email, u.contact_number,
                u.is_senior, u.is_pwd, u.senior_verified, u.pwd_verified,
-             i.invoice_id, i.invoice_number
+                         i.invoice_id, i.invoice_number, i.issued_by_name, i.created_at AS invoice_created_at
         FROM orders o
         JOIN user_accounts u ON o.user_id = u.user_id
         LEFT JOIN invoices i ON i.order_id = o.order_id
@@ -2794,7 +2793,7 @@ function generateReceiptHtml(order, items, userName) {
 }
 
 // Function to generate cancellation confirmation email
-function generateCancellationInvoice(userData, orderItems, cancellationRequest) {
+function generateCancellationInvoice(userData, orderItems, cancellationRequest, approvalName) {
     const formattedDate = new Date(userData.created_at).toLocaleDateString();
     const approvalDate = new Date().toLocaleDateString();
     
@@ -2844,6 +2843,7 @@ function generateCancellationInvoice(userData, orderItems, cancellationRequest) 
                         <p><strong>Order ID:</strong> #${userData.order_id}</p>
                         <p><strong>Original Order Date:</strong> ${formattedDate}</p>
                         <p><strong>Cancellation Approved Date:</strong> ${approvalDate}</p>
+                        <p><strong>Approved By:</strong> ${approvalName || 'Store Staff'}</p>
                         <p><strong>Cancellation Reason:</strong> ${cancellationRequest.reason || 'Not specified'}</p>
                     </div>
                     
@@ -2862,21 +2862,6 @@ function generateCancellationInvoice(userData, orderItems, cancellationRequest) 
                                 ${itemsHtml}
                             </tbody>
                         </table>
-                    </div>
-                    
-                    <div class="section">
-                        <p><strong>Refund Amount:</strong> <span class="total">₱${userData.total_amount.toFixed(2)}</span></p>
-                        <p style="color: #666;">Your refund will be processed within 5-7 business days to your original payment method.</p>
-                    </div>
-                    
-                    <div class="section" style="background: #e3f2fd; padding: 15px; border-radius: 4px; border-left: 4px solid #2196F3;">
-                        <h4 style="margin-top: 0; color: #1976D2;">Important Information:</h4>
-                        <ul style="margin: 10px 0;">
-                            <li>Your order is now marked as CANCELLED</li>
-                            <li>All ordered items have been restocked</li>
-                            <li>You can place a new order anytime</li>
-                            <li>If you need further assistance, please contact us immediately</li>
-                        </ul>
                     </div>
                 </div>
                 
@@ -3149,10 +3134,13 @@ app.post('/api/orders/:orderId/cancel', (req, res) => {
 app.get('/api/admin/cancellation-requests', checkRole(['admin', 'worker']), (req, res) => {
     const sql = `
         SELECT cr.*, o.total_amount, o.status as order_status, 
-               u.first_name, u.last_name, u.email
+               u.first_name, u.last_name, u.email,
+               reviewer.first_name AS reviewed_by_first_name,
+               reviewer.last_name AS reviewed_by_last_name
         FROM order_cancellation_requests cr
         JOIN orders o ON cr.order_id = o.order_id
         JOIN user_accounts u ON cr.user_id = u.user_id
+        LEFT JOIN user_accounts reviewer ON cr.reviewed_by = reviewer.user_id
         ORDER BY cr.created_at DESC
     `;
     
@@ -3359,9 +3347,9 @@ app.get('/api/analytics/best-sellers', (req, res) => {
     
     let dateCondition;
     if (period === 'weekly') {
-        dateCondition = "DATE(o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        dateCondition = "DATE(o.updated_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY)";
     } else {
-        dateCondition = "DATE(o.created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+        dateCondition = "DATE(o.updated_at) BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE())";
     }
 
     const sql = `
@@ -3389,9 +3377,9 @@ app.get('/api/admin/analytics/sales', checkRole(['admin', 'worker']), (req, res)
     
     let dateCondition;
     if (period === 'weekly') {
-        dateCondition = "DATE(created_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+        dateCondition = "DATE(created_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 6 DAY)";
     } else {
-        dateCondition = "DATE(created_at) >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+        dateCondition = "DATE(created_at) BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE())";
     }
 
     const sql = `
@@ -3401,9 +3389,9 @@ app.get('/api/admin/analytics/sales', checkRole(['admin', 'worker']), (req, res)
             SUM(total_amount) as total_revenue,
             AVG(total_amount) as avg_order_value
         FROM orders 
-        WHERE status = 'completed' AND ${dateCondition}
+        WHERE LOWER(status) <> 'cancelled' AND ${dateCondition}
         GROUP BY DATE(created_at)
-        ORDER BY date DESC
+        ORDER BY date ASC
     `;
 
     db.query(sql, (err, results) => {

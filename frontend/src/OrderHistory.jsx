@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
-import { ArrowLeft, ChevronDown, Package, Printer } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Package, Printer, ShoppingCart, X } from 'lucide-react';
 import './OrderHistory.css';
 
 const ACTIVE_ORDER_STATUSES = new Set(['pending', 'processing']);
@@ -100,6 +100,42 @@ const OrderHistory = () => {
         window.open(url, '_blank', 'noopener,noreferrer');
     };
 
+    const handleCancelOrder = async (orderId) => {
+        const confirmResult = await Swal.fire({
+            title: 'Request Order Cancellation?',
+            text: 'Your cancellation request will be sent to the store for approval. You will be notified once it is reviewed.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, request cancellation',
+            cancelButtonText: 'Keep order',
+            confirmButtonColor: '#dc2626'
+        });
+
+        if (!confirmResult.isConfirmed) return;
+
+        try {
+            await axios.post(`http://localhost:5000/api/orders/${orderId}/cancel`, 
+                { userId, reason: 'Customer requested cancellation' }
+            );
+
+            Swal.fire({
+                title: 'Request Submitted',
+                text: 'Your cancellation request has been sent to the store. The worker/admin will review and notify you of the decision.',
+                icon: 'success',
+                confirmButtonColor: '#2563eb'
+            });
+
+            fetchOrders();
+        } catch (err) {
+            Swal.fire({
+                title: 'Error',
+                text: err.response?.data?.message || 'Failed to submit cancellation request',
+                icon: 'error',
+                confirmButtonColor: '#2563eb'
+            });
+        }
+    };
+
     return (
         <div
             className="order-history-container"
@@ -113,9 +149,18 @@ const OrderHistory = () => {
                     </button>
                 </div>
 
-                <h1>Order Information</h1>
+                <h1 className="order-header-title">Order Information</h1>
 
-                <div className="order-header-right" />
+                <div className="order-header-right">
+                    <button
+                        className="order-header-cart-button"
+                        onClick={() => navigate('/cart')}
+                        type="button"
+                        title="Go to Shopping Cart"
+                    >
+                        <ShoppingCart size={20} />
+                    </button>
+                </div>
             </div>
 
             <div className="orders-panel">
@@ -158,14 +203,25 @@ const OrderHistory = () => {
                                         <div className="order-details">
                                             <div className="details-header-row">
                                                 <h3>Order Details</h3>
-                                                <button
-                                                    className="print-btn"
-                                                    type="button"
-                                                    onClick={() => handlePrintInvoice(order.order_id)}
-                                                >
-                                                    <Printer size={16} />
-                                                    Open Invoice PDF
-                                                </button>
+                                                <div className="details-actions-group">
+                                                    <button
+                                                        className="print-btn"
+                                                        type="button"
+                                                        onClick={() => handlePrintInvoice(order.order_id)}
+                                                    >
+                                                        <Printer size={16} />
+                                                        Open Invoice PDF
+                                                    </button>
+                                                    <button
+                                                        className="cancel-order-btn"
+                                                        type="button"
+                                                        onClick={() => handleCancelOrder(order.order_id)}
+                                                        title="Request order cancellation"
+                                                    >
+                                                        <X size={16} />
+                                                        Cancel Order
+                                                    </button>
+                                                </div>
                                             </div>
 
                                             {isItemsLoading ? (

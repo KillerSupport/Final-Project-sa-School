@@ -607,6 +607,16 @@
     padding-right: 34px;
 }
 
+.tabs-container .tab-button-compact {
+    flex: 0 0 auto;
+    min-width: 160px;
+}
+
+.tabs-container .tab-button-wide {
+    flex: 1.35 1 0;
+    min-width: 220px;
+}
+
 .tabs-container .tab-alert-badge {
     position: absolute;
     top: -10px;
@@ -1326,6 +1336,110 @@
     padding: 24px 0;
     text-align: center;
     color: #555;
+}
+
+.admin-order-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.admin-order-log-date-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.admin-order-log-date-heading {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #1f2937;
+    font-weight: 800;
+}
+
+.admin-order-log-card {
+    width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #f9f9f9;
+    padding: 1rem 1.1rem;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+
+.admin-order-log-card:hover {
+    background: #ffffff;
+    border-color: #2563eb;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
+.admin-order-log-card:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.admin-order-log-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.8rem;
+    align-items: start;
+}
+
+.admin-order-log-id {
+    font-weight: 800;
+    color: #111827;
+}
+
+.admin-order-log-customer {
+    color: #1f2937;
+    font-weight: 700;
+}
+
+.admin-order-log-date {
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.admin-order-log-desc {
+    margin: 0.5rem 0 0;
+    color: #6b7280;
+    font-size: 0.92rem;
+}
+
+.admin-order-log-details {
+    margin-top: 0.55rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    color: #374151;
+    align-items: center;
+}
+
+.admin-order-log-hint {
+    margin-top: 0.6rem;
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.admin-order-log-modal {
+    max-width: 900px;
+    width: min(900px, calc(100vw - 2rem));
+}
+
+.admin-order-log-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+}
+
+.admin-order-log-grid p {
+    margin: 0;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 0.7rem 0.85rem;
 }
 
 .customer-info {

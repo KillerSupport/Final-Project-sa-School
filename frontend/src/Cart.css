@@ -402,6 +402,36 @@
     background: #fff;
 }
 
+.item-quantity-with-remove {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-remove-beside-quantity {
+    background: #fee2e2;
+    color: #dc2626;
+    border: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.btn-remove-beside-quantity:hover {
+    background: #fca5a5;
+    transform: scale(1.05);
+}
+
+.btn-remove-beside-quantity:active {
+    transform: scale(0.95);
+}
+
 .modern-cart-footer {
     display: flex;
     justify-content: space-between;
