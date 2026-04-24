@@ -227,11 +227,73 @@ const transporter = nodemailer.createTransport({
 // --- 4. SIGNUP ROUTE (UPDATED with roles) ---
 app.post('/api/signup', (req, res) => {
     const { firstName, middleName, lastName, suffix, gender, birthday, contact, address, email, password } = req.body;
-    const normalizedEmail = email.trim().toLowerCase();
-    
-    // Improved date handling
-    const dateParts = birthday.split(' / '); 
-    const formattedDate = `${dateParts[2]}-${dateParts[0]}-${dateParts[1]}`; 
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const trimmedFirstName = String(firstName || '').trim();
+    const trimmedLastName = String(lastName || '').trim();
+    const trimmedAddress = String(address || '').trim();
+    const normalizedContact = String(contact || '').replace(/\D/g, '');
+    const normalizedGender = String(gender || '').trim();
+    const rawSuffix = String(suffix || '').trim();
+    const suffixAliases = {
+        'JR': 'Jr.',
+        'JR.': 'Jr.',
+        'SR': 'Sr.',
+        'SR.': 'Sr.',
+        'II': 'II',
+        'III': 'III',
+        'IV': 'IV',
+        'V': 'V'
+    };
+    const normalizedSuffix = rawSuffix ? (suffixAliases[rawSuffix.toUpperCase()] || rawSuffix) : '';
+
+    if (!trimmedFirstName || !trimmedLastName || !normalizedGender || !birthday || !normalizedContact || !trimmedAddress || !normalizedEmail || !password) {
+        return res.status(400).json({ message: 'Please fill out all required fields.' });
+    }
+
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(normalizedEmail)) {
+        return res.status(400).json({ message: 'Invalid email format.' });
+    }
+
+    const meetsPasswordRules =
+        password.length >= 8 &&
+        /[A-Z]/.test(password) &&
+        /[a-z]/.test(password) &&
+        /[0-9]/.test(password) &&
+        /[@#$%^&*\-_+=!?]/.test(password);
+    if (!meetsPasswordRules) {
+        return res.status(400).json({ message: 'Password must have 8+ chars, uppercase, lowercase, number, and symbol (@#$%^&*-_+=!?).' });
+    }
+
+    if (!/^09\d{9}$/.test(normalizedContact)) {
+        return res.status(400).json({ message: 'Invalid contact number. Use 11 digits starting with 09.' });
+    }
+
+    const allowedGenders = ['Male', 'Female', 'Prefer not to say'];
+    if (!allowedGenders.includes(normalizedGender)) {
+        return res.status(400).json({ message: 'Invalid gender selection.' });
+    }
+
+    const allowedSuffixes = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+    if (!allowedSuffixes.includes(normalizedSuffix)) {
+        return res.status(400).json({ message: 'Invalid suffix selection.' });
+    }
+
+    const birthdayDate = new Date(birthday);
+    if (Number.isNaN(birthdayDate.getTime())) {
+        return res.status(400).json({ message: 'Invalid birthday.' });
+    }
+
+    const today = new Date();
+    const minDate = new Date();
+    minDate.setFullYear(today.getFullYear() - 100);
+    const maxDate = new Date();
+    maxDate.setFullYear(today.getFullYear() - 18);
+    if (birthdayDate < minDate || birthdayDate > maxDate) {
+        return res.status(400).json({ message: 'You must be at least 18 years old to sign up.' });
+    }
+
+    const formattedDate = birthdayDate.toISOString().split('T')[0];
 
     db.query("SELECT * FROM user_accounts WHERE email = ? AND is_deleted = 0", [normalizedEmail], (err, result) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -249,7 +311,7 @@ app.post('/api/signup', (req, res) => {
                 (first_name, middle_name, last_name, suffix, gender, email, password, birthday, address, contact_number, is_verified, otp, otp_expires_at, role_id, is_deleted) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 0)`;
 
-            db.query(sql, [firstName, middleName, lastName, suffix, gender, normalizedEmail, hashedPassword, formattedDate, address, contact, otpCode, expiresAt, roleId], (insErr) => {
+            db.query(sql, [trimmedFirstName, middleName, trimmedLastName, normalizedSuffix, normalizedGender, normalizedEmail, hashedPassword, formattedDate, trimmedAddress, normalizedContact, otpCode, expiresAt, roleId], (insErr) => {
                 if (insErr) return res.status(500).json({ message: "Registration failed" });
 
                 transporter.sendMail({
@@ -3423,7 +3485,7 @@ app.post('/api/user-role', (req, res) => {
 // --- 28. GET USER PROFILE ---
 app.get('/api/user-profile/:userId', (req, res) => {
     const { userId } = req.params;
-    const sql = "SELECT user_id, first_name, last_name, email, contact_number, address, is_senior, is_pwd, senior_verified, pwd_verified, profile_image_url, id_image_url, id_front_image_url, id_back_image_url FROM user_accounts WHERE user_id = ? AND is_deleted = 0";
+    const sql = "SELECT user_id, first_name, middle_name, last_name, suffix, gender, birthday, email, contact_number, address, is_senior, is_pwd, senior_verified, pwd_verified, profile_image_url, id_image_url, id_front_image_url, id_back_image_url FROM user_accounts WHERE user_id = ? AND is_deleted = 0";
     
     db.query(sql, [userId], (err, result) => {
         if (err) return res.status(500).json({ message: "Database error" });
@@ -3435,16 +3497,37 @@ app.get('/api/user-profile/:userId', (req, res) => {
 // --- 28.1 UPDATE ACCOUNT PROFILE ---
 app.put('/api/account/:userId', (req, res) => {
     const { userId } = req.params;
-    const { first_name, last_name, email, profile_image_url, id_image_url } = req.body;
+    const { first_name, last_name, email, suffix, profile_image_url, id_image_url } = req.body;
+    const hasSuffix = Object.prototype.hasOwnProperty.call(req.body || {}, 'suffix');
+    const rawSuffix = hasSuffix ? String(suffix || '').trim() : null;
+    const suffixAliases = {
+        'JR': 'Jr.',
+        'JR.': 'Jr.',
+        'SR': 'Sr.',
+        'SR.': 'Sr.',
+        'II': 'II',
+        'III': 'III',
+        'IV': 'IV',
+        'V': 'V'
+    };
+    const normalizedSuffix = hasSuffix
+        ? (rawSuffix ? (suffixAliases[rawSuffix.toUpperCase()] || rawSuffix) : '')
+        : null;
+    const allowedSuffixes = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+
+    if (hasSuffix && !allowedSuffixes.includes(normalizedSuffix)) {
+        return res.status(400).json({ message: 'Invalid suffix selection.' });
+    }
+
     const nextProfileImageUrl = profile_image_url ?? id_image_url ?? null;
 
     const sql = `
         UPDATE user_accounts
-        SET first_name = ?, last_name = ?, email = ?, profile_image_url = ?
+        SET first_name = ?, last_name = ?, email = ?, profile_image_url = ?, suffix = COALESCE(?, suffix)
         WHERE user_id = ? AND is_deleted = 0
     `;
 
-    db.query(sql, [first_name, last_name, email, nextProfileImageUrl, userId], (err, result) => {
+    db.query(sql, [first_name, last_name, email, nextProfileImageUrl, normalizedSuffix, userId], (err, result) => {
         if (err) return res.status(500).json({ message: 'Database error' });
         if (result.affectedRows === 0) return res.status(404).json({ message: 'User not found' });
         res.json({ message: 'Account updated successfully' });
@@ -3458,6 +3541,16 @@ app.put('/api/account/:userId/password', (req, res) => {
 
     if (!oldPassword || !newPassword) {
         return res.status(400).json({ message: 'Old and new password are required' });
+    }
+
+    const meetsPasswordRules =
+        newPassword.length >= 8 &&
+        /[A-Z]/.test(newPassword) &&
+        /[a-z]/.test(newPassword) &&
+        /[0-9]/.test(newPassword) &&
+        /[@#$%^&*\-_+=!?]/.test(newPassword);
+    if (!meetsPasswordRules) {
+        return res.status(400).json({ message: 'Password must have 8+ chars, uppercase, lowercase, number, and symbol (@#$%^&*-_+=!?).' });
     }
 
     const getSql = 'SELECT password FROM user_accounts WHERE user_id = ? AND is_deleted = 0';

@@ -5,6 +5,8 @@ import Swal from 'sweetalert2';
 import { User, ShoppingCart, Package, Settings, LogOut, Eye, EyeOff, X, Mic, MicOff } from 'lucide-react';
 import './ProductCatalog.css';
 
+const ALLOWED_SUFFIXES = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
+
 const ProductCatalog = () => {
     const [products, setProducts] = useState([]);
     const [search, setSearch] = useState('');
@@ -21,6 +23,8 @@ const ProductCatalog = () => {
     const [showOldPassword, setShowOldPassword] = useState(false);
     const [showNewPassword, setShowNewPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [passwordRequirements, setPasswordRequirements] = useState({ length: false, upper: false, lower: false, number: false, symbol: false });
+    const [passwordStrength, setPasswordStrength] = useState({ label: '', color: '', score: 0 });
     const [discountRequestType, setDiscountRequestType] = useState('none');
     const [discountIdFrontFile, setDiscountIdFrontFile] = useState(null);
     const [discountIdBackFile, setDiscountIdBackFile] = useState(null);
@@ -313,6 +317,10 @@ const ProductCatalog = () => {
         setProfileLoading(true);
 
         try {
+            if (!ALLOWED_SUFFIXES.includes(profileEdit.suffix || '')) {
+                throw new Error('Invalid suffix selection.');
+            }
+
             let uploadedImageUrl = profileImagePreview;
 
             if (profileImageFile) {
@@ -327,6 +335,7 @@ const ProductCatalog = () => {
             await axios.put(`http://localhost:5000/api/account/${userId}`, {
                 first_name: profileEdit.first_name,
                 last_name: profileEdit.last_name,
+                suffix: profileEdit.suffix,
                 email: profileEdit.email,
                 id_image_url: uploadedImageUrl
             });
@@ -340,6 +349,10 @@ const ProductCatalog = () => {
                     throw new Error('New passwords do not match');
                 }
 
+                if (passwordEdit.newPassword.length < 8 || !/[A-Z]/.test(passwordEdit.newPassword) || !/[a-z]/.test(passwordEdit.newPassword) || !/[0-9]/.test(passwordEdit.newPassword) || !/[@#$%^&*\-_+=!?]/.test(passwordEdit.newPassword)) {
+                    throw new Error('Password must have 8+ chars, uppercase, lowercase, number, and symbol (@#$%^&*-_+=!?).');
+                }
+
                 setPasswordLoading(true);
                 await axios.put(`http://localhost:5000/api/account/${userId}/password`, {
                     oldPassword: passwordEdit.oldPassword,
@@ -351,6 +364,7 @@ const ProductCatalog = () => {
                 ...user,
                 first_name: profileEdit.first_name,
                 last_name: profileEdit.last_name,
+                suffix: profileEdit.suffix,
                 email: profileEdit.email,
                 id_image_url: uploadedImageUrl
             };
@@ -373,6 +387,23 @@ const ProductCatalog = () => {
     const handlePasswordEditChange = (e) => {
         const { name, value } = e.target;
         setPasswordEdit((prev) => ({ ...prev, [name]: value }));
+        
+        // Update password requirements if it's the newPassword field
+        if (name === 'newPassword') {
+            const reqs = {
+                length: value.length >= 8,
+                upper: /[A-Z]/.test(value),
+                lower: /[a-z]/.test(value),
+                number: /[0-9]/.test(value),
+                symbol: /[@#$%^&*\-_+=!?]/.test(value)
+            };
+            setPasswordRequirements(reqs);
+            const score = Object.values(reqs).filter(Boolean).length;
+            if (value.length === 0) setPasswordStrength({ label: '', color: '', score: 0 });
+            else if (score <= 1) setPasswordStrength({ label: 'Weak', color: '#ff4d4d', score: 1 });
+            else if (score <= 4) setPasswordStrength({ label: 'Medium', color: '#ffa500', score: 2 });
+            else setPasswordStrength({ label: 'Strong', color: '#22c55e', score: 5 });
+        }
     };
 
     const handlePasswordSave = async (e) => {
@@ -683,6 +714,21 @@ const ProductCatalog = () => {
 
                                 <div className="form-row">
                                     <div className="form-field">
+                                        <label className="field-label" htmlFor="client-suffix">Suffix (Optional)</label>
+                                        <select id="client-suffix" name="suffix" value={profileEdit.suffix || ''} onChange={handleProfileEditChange}>
+                                            <option value="">None</option>
+                                            <option value="Jr.">Jr.</option>
+                                            <option value="Sr.">Sr.</option>
+                                            <option value="II">II</option>
+                                            <option value="III">III</option>
+                                            <option value="IV">IV</option>
+                                            <option value="V">V</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="form-row">
+                                    <div className="form-field">
                                         <label className="field-label" htmlFor="client-email">Email</label>
                                         <input id="client-email" name="email" value={profileEdit.email || ''} onChange={handleProfileEditChange} placeholder="Email" />
                                     </div>
@@ -843,6 +889,17 @@ const ProductCatalog = () => {
                                                 {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                             </button>
                                         </div>
+                                        {passwordEdit.newPassword && (
+                                            <div style={{ marginTop: '10px', padding: '0 10px' }}>
+                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', fontSize: '0.75rem', color: 'white' }}>
+                                                    <div style={{ opacity: passwordRequirements.length ? 1 : 0.5 }}>✓ 8+ Chars</div>
+                                                    <div style={{ opacity: passwordRequirements.upper ? 1 : 0.5 }}>✓ Uppercase</div>
+                                                    <div style={{ opacity: passwordRequirements.lower ? 1 : 0.5 }}>✓ Lowercase</div>
+                                                    <div style={{ opacity: passwordRequirements.number ? 1 : 0.5 }}>✓ Number</div>
+                                                    <div style={{ opacity: passwordRequirements.symbol ? 1 : 0.5 }}>✓ Symbol</div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

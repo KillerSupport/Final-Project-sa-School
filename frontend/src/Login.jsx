@@ -62,9 +62,10 @@ const Login = () => {
                 });
             } else {
                 Swal.fire({
-                    title: 'Invalid Access',
-                    text: 'Check your email/password. Note: Passwords are case-sensitive.',
+                    title: 'Login failed!',
+                    text: 'Please check your email and password if they are correct.',
                     icon: 'error',
+                    confirmButtonText: 'Try Again',
                     confirmButtonColor: '#2563eb'
                 });
             }

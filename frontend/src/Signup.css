@@ -1,3 +1,79 @@
+.error-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.error-modal-box {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    min-width: 300px;
+    max-width: 400px;
+    overflow: hidden;
+    animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.error-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+.error-modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.error-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+}
+
+.error-modal-close:hover {
+    color: #111827;
+}
+
+.error-modal-content {
+    padding: 16px 20px;
+    color: #1f2937;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
 .signup-page-container {
     display: flex;
     justify-content: center;
@@ -11,13 +87,13 @@
 }
 
 .narrow-signup {
-    width: 800px !important;
+    width: min(800px, calc(100vw - 24px)) !important;
 }
 
 .signup-main-form {
     width: 100%;
     background: rgba(0, 0, 0, 0.75);
-    padding: 20px 35px;
+    padding: 16px 24px;
     border-radius: 20px;
     box-shadow: 0 15px 35px rgba(0,0,0,0.6);
 }
@@ -34,31 +110,85 @@
 .signup-grid {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    gap: 12px;
+    gap: 9px;
 }
 
 /* Grid Helpers */
 .col-2 { grid-column: span 2; } 
+.col-3 { grid-column: span 3; }
 .col-4 { grid-column: span 4; }
 .col-5 { grid-column: span 5; }
 .col-12 { grid-column: span 12; }
 
+.input-group {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
 .input-group label {
-    display: block;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
     color: white;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     margin-bottom: 3px;
     font-weight: 500;
 }
 
 .input-group input {
     width: 100%;
-    padding: 10px 14px;
+    padding: 8px 12px;
     border-radius: 6px;
     border: none;
     background: white;
     color: #333;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+}
+
+.input-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background: white;
+    color: #333;
+    font-size: 0.85rem;
+    height: 36px;
+}
+
+.required-asterisk {
+    color: #ef4444;
+    font-weight: 700;
+}
+
+.prefixed-input {
+    display: flex;
+    align-items: center;
+    background: white;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.input-prefix {
+    padding: 8px 10px 8px 12px;
+    color: #111827;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border-right: 1px solid #e5e7eb;
+    user-select: none;
+}
+
+.prefixed-input input {
+    border: none;
+    border-radius: 0;
+}
+
+.prefixed-input input:focus,
+.input-group select:focus,
+.input-group input:focus {
+    outline: none;
 }
 
 /* Remove any custom appearance for date input to allow native calendar */
@@ -92,25 +222,29 @@
     width: 100%; 
     height: 4px; 
     background: rgba(255,255,255,0.1); 
-    border-radius: 2px; 
+    border-radius: 2px;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .bar-fill { 
     height: 100%; 
     transition: 0.3s ease; 
-    border-radius: 2px; 
+    border-radius: 2px;
+    max-width: 100%;
 }
 
 .req-grid { 
-    display: grid; 
-    grid-template-columns: repeat(4, 1fr); 
-    margin-top: 5px; 
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px; 
+    margin-top: 5px;
 }
 
 .req-grid div { 
     font-size: 0.65rem; 
-    color: rgba(255,255,255,0.3); 
-    text-align: center; 
+    color: rgba(255,255,255,0.3);
+    text-align: center;
 }
 
 .req-grid div.met { 
@@ -118,22 +252,35 @@
     font-weight: bold; 
 }
 
+.label-error {
+    color: #ef4444;
+    font-size: 0.65rem;
+    display: inline-block;
+    background: white;
+    border: 1px solid #ef4444;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-weight: 500;
+    white-space: nowrap;
+    line-height: 1.1;
+}
+
 .signup-footer-compact {
-    margin-top: 25px;
+    margin-top: 14px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
 }
 
 .signup-btn-small {
-    padding: 12px 60px;
+    padding: 10px 56px;
     background: #2563eb;
     color: white;
     border: none;
     border-radius: 25px;
     font-weight: bold;
-    font-size: 1rem;
+    font-size: 0.95rem;
     cursor: pointer;
     transition: 0.2s;
 }
@@ -141,6 +288,31 @@
 .signup-btn-small:hover { 
     transform: scale(1.05); 
     background: #1d4ed8; 
+}
+
+@media (max-height: 860px) {
+    .signup-main-form {
+        padding: 14px 20px;
+    }
+
+    .form-header {
+        font-size: 2rem;
+        margin-bottom: 14px;
+    }
+
+    .signup-grid {
+        gap: 8px;
+    }
+}
+
+@media (max-width: 860px) {
+    .narrow-signup {
+        width: calc(100vw - 16px) !important;
+    }
+
+    .signup-main-form {
+        padding: 14px 16px;
+    }
 }
 
 .back-link-small {
