@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import { BarChart3, TrendingUp, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, Calendar, Printer } from 'lucide-react';
 import './Analytics.css';
 
 const Analytics = () => {
@@ -9,6 +9,7 @@ const Analytics = () => {
     const [period, setPeriod] = useState('monthly');
     const [loading, setLoading] = useState(true);
     const [hoveredPoint, setHoveredPoint] = useState(null);
+    const printableReportRef = useRef(null);
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userId = user?.user_id;
 
@@ -266,6 +267,68 @@ const Analytics = () => {
 
     const topThreeProducts = bestSellers.slice(0, 3);
 
+    const handlePrintAnalyticsPdf = () => {
+        if (!printableReportRef.current) return;
+
+        const printWindow = window.open('', '_blank', 'width=1280,height=900');
+        if (!printWindow) return;
+
+        const periodLabel = period === 'weekly' ? 'This Week' : 'This Month';
+        const generatedAt = new Date().toLocaleString();
+
+        printWindow.document.write(`
+            <!doctype html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Analytics Report - ${periodLabel}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; color: #111827; }
+                    .print-header { margin-bottom: 16px; }
+                    .print-header h1 { margin: 0 0 6px 0; font-size: 24px; }
+                    .print-header p { margin: 0; color: #4b5563; font-size: 13px; }
+                    .analytics-panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+                    .analytics-panel { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; background: #fff; }
+                    .analytics-panel h2 { margin: 0 0 10px 0; font-size: 18px; }
+                    .top-products-list { display: flex; flex-direction: column; gap: 8px; }
+                    .top-product-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: center; }
+                    .top-product-rank { width: 36px; height: 36px; border-radius: 999px; background: #2563eb; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+                    .overview-metrics { display: grid; gap: 8px; margin-bottom: 10px; }
+                    .overview-metric-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+                    .sales-chart-card { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; }
+                    .sales-chart-card h3 { margin: 0 0 10px 0; }
+                    .chart-scroll-x { overflow: visible !important; }
+                    .chart-plot { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+                    .chart-stage { height: 220px; position: relative; }
+                    .sales-line-chart { width: 100%; height: 220px; display: block; }
+                    .line-chart-labels { display: grid; gap: 0; margin-top: 6px; }
+                    .line-chart-label { text-align: center; font-size: 11px; }
+                    .chart-tooltip-floating, .chart-scroll-indicator { display: none !important; }
+                    @media print {
+                        body { margin: 10mm; }
+                        .analytics-panels { break-inside: avoid; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="print-header">
+                    <h1>TongTong Ornamental Fish Store - Analytics Report</h1>
+                    <p>Period: ${periodLabel}</p>
+                    <p>Generated: ${generatedAt}</p>
+                </div>
+                ${printableReportRef.current.outerHTML}
+            </body>
+            </html>
+        `);
+
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+        }, 250);
+    };
+
     if (loading) {
         return <div className="analytics-loading">Loading analytics...</div>;
     }
@@ -289,10 +352,18 @@ const Analytics = () => {
                         <Calendar size={16} />
                         This Month
                     </button>
+                    <button
+                        type="button"
+                        className="print-report-button"
+                        onClick={handlePrintAnalyticsPdf}
+                    >
+                        <Printer size={16} />
+                        Print PDF
+                    </button>
                 </div>
             </div>
 
-            <div className="analytics-panels">
+            <div className="analytics-panels" ref={printableReportRef}>
                 <div className="analytics-panel top-products-panel">
                     <h2>🏆 Top 3 Most Sold Products ({period === 'weekly' ? 'This Week' : 'This Month'})</h2>
 

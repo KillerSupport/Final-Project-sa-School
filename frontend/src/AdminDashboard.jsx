@@ -918,11 +918,14 @@ const AdminDashboard = () => {
         return 'pending';
     };
 
+    const isOrderStatusFinalized = (status) => getOrderStatusValue(status) !== 'pending';
+
     const updateOrderStatus = async (orderId, newStatus) => {
         const backendStatus = newStatus === 'paid' ? 'completed' : (newStatus === 'processing' ? 'pending' : newStatus);
         try {
             await axios.put(`http://localhost:5000/api/orders/${orderId}`, {
-                status: backendStatus
+                status: backendStatus,
+                userId
             });
             Swal.fire({
                 title: 'Updated!',
@@ -935,7 +938,7 @@ const AdminDashboard = () => {
         } catch (err) {
             Swal.fire({
                 title: 'Error',
-                text: 'Failed to update order status',
+                text: err?.response?.data?.message || 'Failed to update order status',
                 icon: 'error',
                 confirmButtonColor: '#2563eb'
             });
@@ -1646,6 +1649,7 @@ const AdminDashboard = () => {
                                                 value={getOrderStatusValue(order.status)}
                                                 onChange={(e) => updateOrderStatus(order.order_id, e.target.value)}
                                                 className="status-select"
+                                                disabled={isOrderStatusFinalized(order.status)}
                                             >
                                                 <option value="pending">Pending</option>
                                                 <option value="paid">Paid</option>

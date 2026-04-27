@@ -214,6 +214,12 @@ const WorkerDashboard = () => {
     }, [activeTab]);
 
     useEffect(() => {
+        if (activeTab === 'sales' && salesView === 'history') {
+            fetchSalesHistory(salesDateFilter);
+        }
+    }, [activeTab, salesView, salesDateFilter]);
+
+    useEffect(() => {
         if (activeTab === 'sales' && salesView === 'reports') {
             fetchSalesReport(reportPeriod);
         }
@@ -307,14 +313,14 @@ const WorkerDashboard = () => {
         }
     };
 
-    const fetchSalesHistory = async () => {
+    const fetchSalesHistory = async (period = salesDateFilter) => {
         if (!userId) {
             setSalesHistory([]);
             return;
         }
 
         try {
-            const res = await axios.get('http://localhost:5000/api/worker/sales-history', buildWorkerAuthConfig());
+            const res = await axios.get('http://localhost:5000/api/worker/sales-history', buildWorkerAuthConfig({ period }));
             setSalesHistory(res.data.salesHistory || res.data || []);
         } catch (err) {
             setSalesHistory([]);
@@ -880,6 +886,42 @@ const WorkerDashboard = () => {
     const groupedInvoiceTransactionEntries = useMemo(() => {
         return Object.entries(groupedInvoiceTransactions).sort(([dateA], [dateB]) => (dateA < dateB ? 1 : -1));
     }, [groupedInvoiceTransactions]);
+
+    const visibleSalesHistory = useMemo(() => {
+        const searchTerm = salesSearch.trim().toLowerCase();
+        const now = new Date();
+        const todayKey = getTransactionDateKey(now);
+        const weekStart = getStartOfCurrentWeek();
+
+        return (salesHistory || []).filter((sale) => {
+            const saleDate = toSafeDate(sale.order_date || sale.updated_at || sale.created_at);
+            const saleDateKey = getTransactionDateKey(saleDate);
+
+            if (salesDateFilter === 'today' && saleDateKey !== todayKey) {
+                return false;
+            }
+
+            if (salesDateFilter === 'week' && saleDate < weekStart) {
+                return false;
+            }
+
+            if (salesDateFilter === 'month') {
+                if (saleDate.getMonth() !== now.getMonth() || saleDate.getFullYear() !== now.getFullYear()) {
+                    return false;
+                }
+            }
+
+            if (!searchTerm) {
+                return true;
+            }
+
+            return (
+                String(sale.order_id || '').includes(searchTerm) ||
+                String(sale.customer_name || '').toLowerCase().includes(searchTerm) ||
+                String(sale.email || '').toLowerCase().includes(searchTerm)
+            );
+        });
+    }, [salesHistory, salesSearch, salesDateFilter]);
 
     const filteredCashierOrders = useMemo(() => {
         return cashierInvoiceQueue.filter((order) => {
@@ -1468,15 +1510,11 @@ const WorkerDashboard = () => {
 
                                 {loading ? (
                                     <p className="loading-text">Loading sales history...</p>
-                                ) : salesHistory.filter(s =>
-                                    s.order_id?.toString().includes(salesSearch) || s.customer_name?.toLowerCase().includes(salesSearch.toLowerCase())
-                                ).length === 0 ? (
+                                ) : visibleSalesHistory.length === 0 ? (
                                     <p className="no-products-text">No sales records found</p>
                                 ) : (
                                     <div className="sales-history-list">
-                                        {salesHistory.filter(s =>
-                                            s.order_id?.toString().includes(salesSearch) || s.customer_name?.toLowerCase().includes(salesSearch.toLowerCase())
-                                        ).map((sale) => (
+                                        {visibleSalesHistory.map((sale) => (
                                             <button
                                                 key={sale.order_id}
                                                 type="button"

@@ -6,7 +6,8 @@ To open backend(type in terminal):
 cd backend
 node server.js
 
-Repository: https://github.com/KillerSupport/Final-Project-sa-School
+Repository: https://github.com/KillerSupport/Final-Project-sa-School.git
+For testing admin email low stock, search in server.js to change time: // Change time kapag mag testing sa school, hihihihi
 
 Database name: db_project 
 Table name: user_accounts

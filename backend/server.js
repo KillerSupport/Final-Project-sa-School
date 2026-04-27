@@ -224,6 +224,157 @@ const transporter = nodemailer.createTransport({
     auth: { user: 'tongtongornamental@gmail.com', pass: 'wsei zyzt cwpo tzlo' }
 });
 
+// Change time kapag mag testing sa school, hihihihi
+const LOW_STOCK_DIGEST_HOUR = Number(process.env.LOW_STOCK_DIGEST_HOUR ?? 19);
+const LOW_STOCK_DIGEST_MINUTE = Number(process.env.LOW_STOCK_DIGEST_MINUTE ?? 0);
+const LOW_STOCK_DIGEST_TIMEZONE = process.env.LOW_STOCK_DIGEST_TIMEZONE || 'Asia/Manila';
+const LOW_STOCK_EMAIL_THRESHOLD = 20;
+let lastLowStockDigestDate = '';
+
+function getManilaNow() {
+    const now = new Date();
+    const zonedNow = new Date(now.toLocaleString('en-US', { timeZone: LOW_STOCK_DIGEST_TIMEZONE }));
+    return zonedNow;
+}
+
+function getDateKey(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function parseAdminEmailsFromEnv() {
+    const raw = process.env.ADMIN_EMAILS || '';
+    if (!raw.trim()) return [];
+    return raw
+        .split(',')
+        .map((email) => String(email || '').trim().toLowerCase())
+        .filter(Boolean);
+}
+
+function getAdminEmailsFromDb(callback) {
+    const sql = `
+        SELECT DISTINCT LOWER(TRIM(u.email)) AS email
+        FROM user_accounts u
+        JOIN roles r ON u.role_id = r.role_id
+        WHERE r.role_name = 'admin'
+          AND u.is_deleted = 0
+          AND u.email IS NOT NULL
+          AND TRIM(u.email) <> ''
+    `;
+
+    db.query(sql, (err, rows) => {
+        if (err) return callback(err);
+        const emails = (rows || []).map((row) => row.email).filter(Boolean);
+        callback(null, emails);
+    });
+}
+
+function sendDailyLowStockDigest() {
+    const lowStockSql = `
+        SELECT product_id, name, category, stock
+        FROM products
+        WHERE is_deleted = 0
+          AND stock <= ?
+        ORDER BY stock ASC, name ASC
+    `;
+
+    db.query(lowStockSql, [LOW_STOCK_EMAIL_THRESHOLD], (stockErr, lowStockRows) => {
+        if (stockErr) {
+            console.error('Low-stock digest query error:', stockErr.message);
+            return;
+        }
+
+        if (!lowStockRows || lowStockRows.length === 0) {
+            console.log('Low-stock digest skipped: no low-stock products found.');
+            return;
+        }
+
+        getAdminEmailsFromDb((adminErr, adminEmailsFromDb) => {
+            if (adminErr) {
+                console.error('Low-stock digest admin email lookup error:', adminErr.message);
+                return;
+            }
+
+            const envAdminEmails = parseAdminEmailsFromEnv();
+            const recipientSet = new Set([...envAdminEmails, ...adminEmailsFromDb]);
+            const recipients = Array.from(recipientSet);
+
+            if (recipients.length === 0) {
+                console.warn('Low-stock digest skipped: no admin recipients configured.');
+                return;
+            }
+
+            const now = getManilaNow();
+            const dateLabel = getDateKey(now);
+            const rowsHtml = lowStockRows
+                .map((item) => `
+                    <tr>
+                        <td style="padding:8px;border:1px solid #ddd;">${item.product_id}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${item.name || 'Unnamed Product'}</td>
+                        <td style="padding:8px;border:1px solid #ddd;">${item.category || '-'}</td>
+                        <td style="padding:8px;border:1px solid #ddd;text-align:right;">${Number(item.stock || 0)}</td>
+                    </tr>
+                `)
+                .join('');
+
+            const html = `
+                <h2>Daily Low Stock Report</h2>
+                <p>Date: <strong>${dateLabel}</strong></p>
+                <p>The following products are at or below <strong>${LOW_STOCK_EMAIL_THRESHOLD}</strong> stock.</p>
+                <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;">
+                    <thead>
+                        <tr>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Product ID</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Product Name</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Category</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:right;">Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            `;
+
+            transporter.sendMail(
+                {
+                    from: 'tongtongornamental@gmail.com',
+                    to: recipients.join(','),
+                    subject: `Daily Low Stock Report - ${dateLabel}`,
+                    html
+                },
+                (mailErr) => {
+                    if (mailErr) {
+                        console.error('Low-stock digest email error:', mailErr.message);
+                        return;
+                    }
+                    console.log(`Low-stock digest sent to ${recipients.join(', ')}.`);
+                }
+            );
+        });
+    });
+}
+
+function runLowStockDigestIfDue() {
+    const now = getManilaNow();
+    const hour = now.getHours();
+    const minute = now.getMinutes();
+    const dateKey = getDateKey(now);
+
+    if (hour === LOW_STOCK_DIGEST_HOUR && minute >= LOW_STOCK_DIGEST_MINUTE && lastLowStockDigestDate !== dateKey) {
+        lastLowStockDigestDate = dateKey;
+        sendDailyLowStockDigest();
+    }
+}
+
+function startLowStockDigestScheduler() {
+    setInterval(runLowStockDigestIfDue, 60 * 1000);
+    runLowStockDigestIfDue();
+    console.log(
+        `Low-stock digest scheduler active at ${LOW_STOCK_DIGEST_HOUR}:${String(LOW_STOCK_DIGEST_MINUTE).padStart(2, '0')} (${LOW_STOCK_DIGEST_TIMEZONE}), threshold <= ${LOW_STOCK_EMAIL_THRESHOLD}`
+    );
+}
+
 // --- 4. SIGNUP ROUTE (UPDATED with roles) ---
 app.post('/api/signup', (req, res) => {
     const { firstName, middleName, lastName, suffix, gender, birthday, contact, address, email, password } = req.body;
@@ -820,14 +971,296 @@ app.put('/api/products/:id', checkRole('admin'), (req, res) => {
     });
 });
 
+function dbQueryAsync(sql, params = []) {
+    return new Promise((resolve, reject) => {
+        db.query(sql, params, (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+}
+
+async function sendDiscontinuedProductInvoiceUpdateEmail(orderId, productName, actorUserId) {
+    const orderRows = await dbQueryAsync(
+    `SELECT o.order_id, o.user_id, o.total_amount, o.created_at, o.status, o.shipping_address,
+                u.email, u.first_name, u.last_name, u.contact_number,
+                i.invoice_id, i.invoice_number
+         FROM orders o
+         JOIN user_accounts u ON o.user_id = u.user_id
+         LEFT JOIN invoices i ON i.order_id = o.order_id
+         WHERE o.order_id = ?
+         LIMIT 1`,
+        [orderId]
+    );
+
+    if (!orderRows || orderRows.length === 0) {
+        return { sent: false, reason: 'order-not-found' };
+    }
+
+    const order = orderRows[0];
+    if (!order.email) {
+        return { sent: false, reason: 'missing-email' };
+    }
+
+    const itemRows = await dbQueryAsync(
+        `SELECT oi.quantity, oi.price, oi.unit_discount, p.name
+         FROM order_items oi
+         JOIN products p ON p.product_id = oi.product_id
+         WHERE oi.order_id = ?
+         ORDER BY oi.order_item_id ASC`,
+        [orderId]
+    );
+
+    if (!itemRows || itemRows.length === 0) {
+        return { sent: false, reason: 'no-items-left' };
+    }
+
+    const itemsHtml = itemRows.map((item) => {
+        const quantity = Number(item.quantity || 0);
+        const price = Number(item.price || 0);
+        const unitDiscount = Number(item.unit_discount || 0);
+        const originalTotal = quantity * price;
+        const discountTotal = quantity * unitDiscount;
+        const discountedTotal = originalTotal - discountTotal;
+
+        return `
+            <tr>
+                <td>${item.name || 'Item'}</td>
+                <td>${quantity}</td>
+                <td>₱${price.toFixed(2)}</td>
+                <td>₱${unitDiscount.toFixed(2)}</td>
+                <td>₱${discountedTotal.toFixed(2)}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const totalDiscount = itemRows.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_discount || 0)), 0);
+
+    let invoiceId = order.invoice_id;
+    let invoiceNumber = order.invoice_number;
+    if (!invoiceId) {
+        invoiceNumber = `INV-${Date.now()}-${orderId}`;
+        const insertInvoiceResult = await dbQueryAsync(
+            `INSERT INTO invoices (order_id, invoice_number, customer_name, email, contact_number, total_amount, payment_method, invoice_pdf_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+            [
+                orderId,
+                invoiceNumber,
+                `${order.first_name || ''} ${order.last_name || ''}`.trim() || null,
+                order.email || null,
+                order.contact_number || null,
+                Number(order.total_amount || 0),
+                'cash_on_store'
+            ]
+        );
+        invoiceId = insertInvoiceResult.insertId;
+    } else {
+        await dbQueryAsync(
+            `UPDATE invoices
+             SET customer_name = ?, email = ?, contact_number = ?, total_amount = ?
+             WHERE invoice_id = ?`,
+            [
+                `${order.first_name || ''} ${order.last_name || ''}`.trim() || null,
+                order.email || null,
+                order.contact_number || null,
+                Number(order.total_amount || 0),
+                invoiceId
+            ]
+        );
+    }
+
+    const invoiceUrl = `http://localhost:5000/api/orders/${orderId}/invoice-pdf?userId=${order.user_id}`;
+    const customerName = `${order.first_name || ''} ${order.last_name || ''}`.trim() || 'Customer';
+
+    await new Promise((resolve, reject) => {
+        transporter.sendMail(
+            {
+                from: 'tongtongornamental@gmail.com',
+                to: order.email,
+                subject: `Order Updated - Item Discontinued (Order #${orderId})`,
+                html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 20px; }
+                            .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
+                            .receipt { border: 1px solid #ddd; padding: 20px; margin: 20px 0; }
+                            table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                            th { background-color: #f2f2f2; }
+                            .total { font-weight: bold; font-size: 18px; }
+                            .footer { margin-top: 30px; font-size: 12px; color: #666; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>TongTong Ornamental Fish Store</h1>
+                            <h2>Updated Order Receipt</h2>
+                        </div>
+
+                        <div class="receipt">
+                            <h3>Order Details</h3>
+                            <p><strong>Order ID:</strong> #${orderId}</p>
+                            <p><strong>Customer:</strong> ${customerName}</p>
+                            <p><strong>Order Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+                            <p><strong>Status:</strong> ${order.status}</p>
+                            <p><strong>Shipping Address:</strong> ${order.shipping_address || 'N/A'}</p>
+
+                            <p style="color: #b85c00; font-weight: bold;">An item in your pending order was discontinued by the store: ${productName || 'A product'}.</p>
+
+                            <h3>Items Ordered</h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Quantity</th>
+                                        <th>Unit Price</th>
+                                        <th>Discount</th>
+                                        <th>Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${itemsHtml}
+                                </tbody>
+                            </table>
+
+                            <p><strong>Total Discount:</strong> ₱${totalDiscount.toFixed(2)}</p>
+                            <p class="total">Updated Total Amount: ₱${Number(order.total_amount || 0).toFixed(2)}</p>
+                            <p style="color: red; font-weight: bold;">Your invoice has been updated automatically. Please use this updated invoice for reference.</p>
+                            <p><a href="${invoiceUrl}" target="_blank" rel="noopener noreferrer">Download Updated Invoice PDF</a></p>
+                        </div>
+
+                        <div class="footer">
+                            <p>Thank you for shopping with TongTong Ornamental Fish Store!</p>
+                            <p>If you have any questions, please contact us at tongtongornamental@gmail.com</p>
+                        </div>
+                    </body>
+                    </html>
+                `
+            },
+            (mailErr) => {
+                if (mailErr) return reject(mailErr);
+                resolve();
+            }
+        );
+    });
+
+    await dbQueryAsync(
+        'INSERT INTO invoice_requests (invoice_id, requested_by, email_sent) VALUES (?, ?, 1)',
+        [invoiceId, Number(actorUserId || 0) || order.user_id]
+    );
+
+    return { sent: true };
+}
+
+async function applyDiscontinuedProductEffects(productId, productName, actorUserId) {
+    const removedFromCartResult = await dbQueryAsync('DELETE FROM cart WHERE product_id = ?', [productId]);
+
+    const affectedOrderRows = await dbQueryAsync(
+        `SELECT DISTINCT o.order_id
+         FROM orders o
+         JOIN order_items oi ON oi.order_id = o.order_id
+         WHERE oi.product_id = ?
+           AND LOWER(o.status) IN ('pending', 'processing')`,
+        [productId]
+    );
+
+    let updatedOrders = 0;
+    let cancelledOrders = 0;
+    let emailedOrders = 0;
+
+    for (const row of affectedOrderRows) {
+        const orderId = Number(row.order_id);
+
+        await dbQueryAsync('DELETE FROM order_items WHERE order_id = ? AND product_id = ?', [orderId, productId]);
+
+        const totals = await dbQueryAsync(
+            `SELECT COUNT(*) AS item_count,
+                    COALESCE(SUM((price - unit_discount) * quantity), 0) AS total_amount
+             FROM order_items
+             WHERE order_id = ?`,
+            [orderId]
+        );
+
+        const itemCount = Number(totals?.[0]?.item_count || 0);
+        const nextTotal = Number(totals?.[0]?.total_amount || 0);
+
+        if (itemCount <= 0) {
+            await dbQueryAsync(
+                `UPDATE orders
+                 SET total_amount = 0,
+                     status = 'cancelled',
+                     cancellation_status = 'approved'
+                 WHERE order_id = ?
+                   AND LOWER(status) IN ('pending', 'processing')`,
+                [orderId]
+            );
+            await dbQueryAsync('UPDATE invoices SET total_amount = 0 WHERE order_id = ?', [orderId]);
+            cancelledOrders += 1;
+            continue;
+        }
+
+        await dbQueryAsync(
+            `UPDATE orders
+             SET total_amount = ?
+             WHERE order_id = ?
+               AND LOWER(status) IN ('pending', 'processing')`,
+            [nextTotal, orderId]
+        );
+
+        await dbQueryAsync('UPDATE invoices SET total_amount = ? WHERE order_id = ?', [nextTotal, orderId]);
+        updatedOrders += 1;
+
+        try {
+            const emailResult = await sendDiscontinuedProductInvoiceUpdateEmail(orderId, productName, actorUserId);
+            if (emailResult.sent) {
+                emailedOrders += 1;
+            }
+        } catch (mailErr) {
+            console.error(`Failed sending updated invoice email for order #${orderId}:`, mailErr.message || mailErr);
+        }
+    }
+
+    return {
+        removedFromCartCount: Number(removedFromCartResult?.affectedRows || 0),
+        affectedUnpaidOrderCount: affectedOrderRows.length,
+        updatedOrderCount: updatedOrders,
+        cancelledOrderCount: cancelledOrders,
+        emailedOrderCount: emailedOrders
+    };
+}
+
 // --- 14. DELETE PRODUCT (Admin and Worker) ---
 app.delete('/api/products/:id', checkRole('admin'), (req, res) => {
     const { id } = req.params;
+    const actorUserId = Number(req.body?.userId || req.query?.userId || req.headers['x-user-id'] || 0);
+    const numericProductId = Number(id);
     const sql = "UPDATE products SET is_deleted = 1 WHERE product_id = ?";
 
-    db.query(sql, [id], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "Product deleted" });
+    db.query('SELECT product_id, name FROM products WHERE product_id = ? LIMIT 1', [numericProductId], async (findErr, rows) => {
+        if (findErr) return res.status(500).json({ message: 'Database error' });
+        if (!rows || rows.length === 0) return res.status(404).json({ message: 'Product not found' });
+
+        const productName = rows[0].name || 'Product';
+
+        db.query(sql, [numericProductId], async (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+
+            try {
+                const impactSummary = await applyDiscontinuedProductEffects(numericProductId, productName, actorUserId);
+                return res.json({
+                    message: 'Product deleted',
+                    impactSummary
+                });
+            } catch (impactErr) {
+                console.error('Discontinued product impact processing error:', impactErr.message || impactErr);
+                return res.json({
+                    message: 'Product deleted',
+                    warning: 'Product was deleted, but some cart/order cleanup or email notifications failed'
+                });
+            }
+        });
     });
 });
 
@@ -1249,6 +1682,17 @@ app.put('/api/worker/orders/:orderId', checkRole(['admin', 'worker']), (req, res
 
 // --- 27Y. WORKER/ADMIN SALES HISTORY ---
 app.get('/api/worker/sales-history', checkRole(['admin', 'worker']), (req, res) => {
+    const period = String(req.query.period || 'all').toLowerCase();
+
+    let dateClause = '';
+    if (period === 'today') {
+        dateClause = 'AND DATE(o.updated_at) = CURDATE()';
+    } else if (period === 'week') {
+        dateClause = 'AND YEARWEEK(o.updated_at, 1) = YEARWEEK(CURDATE(), 1)';
+    } else if (period === 'month') {
+        dateClause = 'AND MONTH(o.updated_at) = MONTH(CURDATE()) AND YEAR(o.updated_at) = YEAR(CURDATE())';
+    }
+
     const sql = `
         SELECT o.order_id,
                o.total_amount AS order_total,
@@ -1267,6 +1711,7 @@ app.get('/api/worker/sales-history', checkRole(['admin', 'worker']), (req, res) 
         JOIN user_accounts u ON o.user_id = u.user_id
         LEFT JOIN invoices i ON i.order_id = o.order_id
         WHERE o.status = 'completed'
+                    ${dateClause}
         ORDER BY o.updated_at DESC
     `;
 
@@ -3041,25 +3486,47 @@ app.put('/api/orders/:orderId', checkRole('admin'), (req, res) => {
     const actorUserId = Number(req.body?.userId || req.query?.userId || req.headers['x-user-id'] || 0);
     const rawStatus = String(status || '').toLowerCase();
     const normalizedStatus = rawStatus === 'processing' ? 'pending' : rawStatus;
-    const sql = "UPDATE orders SET status = ? WHERE order_id = ?";
-    
-    db.query(sql, [normalizedStatus, orderId], (err) => {
-        if (err) return res.status(500).json({ message: "Database error" });
+    const allowedStatuses = new Set(['pending', 'completed', 'cancelled']);
 
-        if (normalizedStatus !== 'completed') {
-            return res.json({ message: "Order updated" });
+    if (!allowedStatuses.has(normalizedStatus)) {
+        return res.status(400).json({ message: 'Invalid order status' });
+    }
+
+    db.query('SELECT status FROM orders WHERE order_id = ?', [orderId], (findErr, rows) => {
+        if (findErr) return res.status(500).json({ message: 'Database error' });
+        if (!rows || rows.length === 0) return res.status(404).json({ message: 'Order not found' });
+
+        const currentStatus = String(rows[0].status || '').toLowerCase() === 'processing'
+            ? 'pending'
+            : String(rows[0].status || '').toLowerCase();
+
+        // Lock order status once it leaves pending to avoid accidental reprocessing.
+        if (currentStatus !== 'pending') {
+            return res.status(400).json({ message: 'This order status is already final and cannot be changed' });
         }
 
-        return sendPaymentConfirmationInvoiceEmail(orderId, actorUserId, (mailErr) => {
-            if (mailErr) {
-                console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
-                return res.json({
-                    message: 'Order updated',
-                    warning: 'Payment updated, but invoice email could not be sent automatically'
-                });
+        if (normalizedStatus === 'pending') {
+            return res.json({ message: 'Order is still pending' });
+        }
+
+        db.query('UPDATE orders SET status = ? WHERE order_id = ?', [normalizedStatus, orderId], (err) => {
+            if (err) return res.status(500).json({ message: 'Database error' });
+
+            if (normalizedStatus !== 'completed') {
+                return res.json({ message: 'Order updated' });
             }
 
-            return res.json({ message: 'Order updated and invoice email sent' });
+            return sendPaymentConfirmationInvoiceEmail(orderId, actorUserId, (mailErr) => {
+                if (mailErr) {
+                    console.error(`Auto invoice email failed for order ${orderId}:`, mailErr.message || mailErr);
+                    return res.json({
+                        message: 'Order updated',
+                        warning: 'Payment updated, but invoice email could not be sent automatically'
+                    });
+                }
+
+                return res.json({ message: 'Order updated and invoice email sent' });
+            });
         });
     });
 });
@@ -3727,5 +4194,7 @@ app.get('/api/categories', (req, res) => {
         res.json(categories);
     });
 });
+
+startLowStockDigestScheduler();
 
 app.listen(5000, () => console.log("Server running on port 5000"));
