@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import axios from 'axios';
@@ -9,7 +9,24 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const navigate = useNavigate();
+
+    useEffect(() => {
+        fetchBackground();
+    }, []);
+
+    const fetchBackground = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/background-settings');
+            const setting = Array.isArray(res.data)
+                ? res.data.find((item) => item.setting_name === 'client_background')
+                : null;
+            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+        } catch {
+            setBackgroundImageUrl('/isda_bg.png');
+        }
+    };
 
     const handleLogin = async () => {
         const normalizedEmail = email.trim().toLowerCase();
@@ -73,7 +90,7 @@ const Login = () => {
     };
 
     return (
-        <div className="auth-page-bg">
+        <div className="auth-page-bg" style={{ backgroundImage: `url(${backgroundImageUrl})` }}>
             <div className="auth-glass-card">
                 <div className="auth-branding">
                     <h1>Welcome to TongTong Fish Culture</h1>

@@ -629,10 +629,12 @@ const ProductCatalog = () => {
 
                                 <div className="product-info">
                                     <h4 className="product-title">{product.name}</h4>
-                                    <div className="category">{product.category}</div>
                                     <div className="product-meta-line">
                                         <div className="price">₱{Number(product.price || 0).toFixed(2)}</div>
-                                        <div className="stock-text">Stock: {Number(product.stock || 0)}</div>
+                                        <div className="stock-and-category">
+                                            <div className="stock-text">Stock: {Number(product.stock || 0)}</div>
+                                            <div className="category">{product.category}</div>
+                                        </div>
                                         {isUnavailable && (
                                             <div className="product-status unavailable">{unavailableLabel}</div>
                                         )}

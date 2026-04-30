@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import Swal from 'sweetalert2'; 
@@ -35,11 +35,28 @@ const Signup = () => {
 
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const navigate = useNavigate();
     const [requirements, setRequirements] = useState({ length: false, upper: false, lower: false, number: false, symbol: false });
     const [strength, setStrength] = useState({ label: '', color: '', score: 0 });
     const [errors, setErrors] = useState({});
     const [showFormError, setShowFormError] = useState(false);
+
+    useEffect(() => {
+        fetchBackground();
+    }, []);
+
+    const fetchBackground = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/background-settings');
+            const setting = Array.isArray(res.data)
+                ? res.data.find((item) => item.setting_name === 'client_background')
+                : null;
+            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+        } catch {
+            setBackgroundImageUrl('/isda_bg.png');
+        }
+    };
 
     // Helper to get min/max date for 18+ years old
     const getMaxBirthday = () => {
@@ -266,7 +283,7 @@ const Signup = () => {
     };
 
     return (
-        <div className="signup-page-container">
+        <div className="signup-page-container" style={{ backgroundImage: `url(${backgroundImageUrl})` }}>
             {showFormError && (
                 <div className="error-modal-overlay" onClick={() => setShowFormError(false)}>
                     <div className="error-modal-box" onClick={(e) => e.stopPropagation()}>

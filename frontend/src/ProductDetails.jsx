@@ -115,9 +115,9 @@ const ProductDetails = () => {
                     <button 
                         className="back-button"
                         onClick={() => navigate('/catalog')}
+                        title="Back to Catalog"
                     >
                         <ArrowLeft size={20} />
-                        Back to Catalog
                     </button>
                 </div>
 

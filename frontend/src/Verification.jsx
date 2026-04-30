@@ -9,11 +9,28 @@ const Verification = () => {
     const [otp, setOtp] = useState('');
     const [timer, setTimer] = useState(60);
     const [isTimedOut, setIsTimedOut] = useState(false);
+    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const navigate = useNavigate();
     const location = useLocation();
     
     // Retrieve email passed from Signup.jsx state
     const email = location.state?.email || "";
+
+    const fetchBackground = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/background-settings');
+            const setting = Array.isArray(res.data)
+                ? res.data.find((item) => item.setting_name === 'client_background')
+                : null;
+            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
+        } catch {
+            setBackgroundImageUrl('/isda_bg.png');
+        }
+    };
+
+    useEffect(() => {
+        fetchBackground();
+    }, []);
 
     useEffect(() => {
         let interval;
@@ -64,7 +81,7 @@ const Verification = () => {
     };
 
     return (
-        <div className="auth-page-bg">
+        <div className="auth-page-bg" style={{ backgroundImage: `url(${backgroundImageUrl})` }}>
             <div className="auth-glass-card">
                 <div className="auth-branding">
                     <h1 className="recovery-side-text">Identity Verification</h1>

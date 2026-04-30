@@ -143,9 +143,8 @@ const OrderHistory = () => {
         >
             <div className="order-header glass-panel">
                 <div className="order-header-left">
-                    <button className="back-button" onClick={() => navigate('/catalog')} type="button">
+                    <button className="back-button" onClick={() => navigate('/catalog')} type="button" title="Back to Catalog">
                         <ArrowLeft size={20} />
-                        Back to Catalog
                     </button>
                 </div>
 
