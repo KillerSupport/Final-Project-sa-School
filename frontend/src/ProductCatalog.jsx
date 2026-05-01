@@ -8,11 +8,16 @@ import './ProductCatalog.css';
 const ALLOWED_SUFFIXES = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
 
 const ProductCatalog = () => {
+    const [clientTheme, setClientTheme] = useState({
+        pageBg: '#e9f7f6',
+        cardBg: '#ffffff',
+        panelBg: '#f8fcfc',
+        softBg: '#dff4f2'
+    });
     const [products, setProducts] = useState([]);
     const [search, setSearch] = useState('');
     const [sortOrder, setSortOrder] = useState('ASC');
     const [loading, setLoading] = useState(true);
-    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const [speechSupported, setSpeechSupported] = useState(false);
     const [isListening, setIsListening] = useState(false);
     const recognitionRef = useRef(null);
@@ -75,20 +80,21 @@ const ProductCatalog = () => {
         .trim();
 
     useEffect(() => {
-        const fetchBackground = async () => {
+        const fetchClientTheme = async () => {
             try {
                 const res = await axios.get('http://localhost:5000/api/background-settings');
-                const setting = Array.isArray(res.data)
-                    ? res.data.find((item) => item.setting_name === 'client_background')
-                    : null;
-
-                setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
-            } catch {
-                setBackgroundImageUrl('/isda_bg.png');
-            }
+                const settings = Array.isArray(res.data) ? res.data : [];
+                const getSetting = (name, fallback) => settings.find((item) => item.setting_name === name)?.setting_value || fallback;
+                setClientTheme({
+                    pageBg: getSetting('client_theme_page_bg', '#e9f7f6'),
+                    cardBg: getSetting('client_theme_card_bg', '#ffffff'),
+                    panelBg: getSetting('client_theme_panel_bg', '#f8fcfc'),
+                    softBg: getSetting('client_theme_soft_bg', '#dff4f2')
+                });
+            } catch {}
         };
 
-        fetchBackground();
+        fetchClientTheme();
     }, []);
 
     const handleLogout = async () => {
@@ -506,7 +512,12 @@ const ProductCatalog = () => {
     return (
         <div
             className="catalog-container"
-            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+            style={{
+                '--client-page-bg': clientTheme.pageBg,
+                '--client-card-bg': clientTheme.cardBg,
+                '--client-panel-bg': clientTheme.panelBg,
+                '--client-soft-bg': clientTheme.softBg
+            }}
         >
             <div className="catalog-header glass-panel">
                 <div className="client-header-left">

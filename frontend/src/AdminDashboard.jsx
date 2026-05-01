@@ -91,9 +91,15 @@ const AdminDashboard = () => {
     const profileImageStorageKey = userId ? `adminProfileImage:${userId}` : 'adminProfileImage';
     const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
 
-    const [websiteBgFile, setWebsiteBgFile] = useState(null);
-    const [websiteBgUrl, setWebsiteBgUrl] = useState('');
-    const [websiteBgLoading, setWebsiteBgLoading] = useState(false);
+    const [authBgFile, setAuthBgFile] = useState(null);
+    const [authBgUrl, setAuthBgUrl] = useState('');
+    const [websiteSettingsLoading, setWebsiteSettingsLoading] = useState(false);
+    const [clientThemeSettings, setClientThemeSettings] = useState({
+        pageBg: '#e9f7f6',
+        cardBg: '#ffffff',
+        panelBg: '#f8fcfc',
+        softBg: '#dff4f2'
+    });
 
     const handleLogout = async () => {
         try {
@@ -550,12 +556,25 @@ const AdminDashboard = () => {
         if (activeTab === 'website-settings') {
             axios.get('http://localhost:5000/api/background-settings')
                 .then(res => {
-                    const setting = Array.isArray(res.data)
-                        ? res.data.find((item) => item.setting_name === 'client_background')
-                        : null;
-                    setWebsiteBgUrl(setting?.setting_value || '');
+                    const settings = Array.isArray(res.data) ? res.data : [];
+                    const getSetting = (name, fallback = '') => settings.find((item) => item.setting_name === name)?.setting_value || fallback;
+                    setAuthBgUrl(getSetting('auth_background', ''));
+                    setClientThemeSettings({
+                        pageBg: getSetting('client_theme_page_bg', '#e9f7f6'),
+                        cardBg: getSetting('client_theme_card_bg', '#ffffff'),
+                        panelBg: getSetting('client_theme_panel_bg', '#f8fcfc'),
+                        softBg: getSetting('client_theme_soft_bg', '#dff4f2')
+                    });
                 })
-                .catch(() => setWebsiteBgUrl(''));
+                .catch(() => {
+                    setAuthBgUrl('');
+                    setClientThemeSettings({
+                        pageBg: '#e9f7f6',
+                        cardBg: '#ffffff',
+                        panelBg: '#f8fcfc',
+                        softBg: '#dff4f2'
+                    });
+                });
         }
     }, [activeTab]);
 
@@ -598,6 +617,14 @@ const AdminDashboard = () => {
 
         return () => clearInterval(intervalId);
     }, []);
+
+    // Close admin order details modal when the order status filter changes
+    useEffect(() => {
+        if (showOrderLogDetailsModal) {
+            setShowOrderLogDetailsModal(false);
+            setSelectedOrderLogDetails(null);
+        }
+    }, [orderLogStatusFilter]);
 
     useEffect(() => {
         if (activeTab === 'products' && productsView === 'deleted') {
@@ -1355,44 +1382,106 @@ const AdminDashboard = () => {
             {activeTab === 'website-settings' && (
                 <div className="admin-content">
                     <div className="section-header">
-                        <h2>🌐 Manage Website</h2>
+                        <h2>Manage Website</h2>
                     </div>
-                    <div style={{maxWidth: 420, margin: '0 auto'}}>
-                        <form onSubmit={async (e) => {
+                    <div className="website-settings-panel">
+                        <form className="website-settings-form" onSubmit={async (e) => {
                             e.preventDefault();
-                            if (!websiteBgFile) return;
-                            setWebsiteBgLoading(true);
+                            setWebsiteSettingsLoading(true);
                             try {
-                                const formData = new FormData();
-                                formData.append('image', websiteBgFile);
-                                const uploadRes = await axios.post('http://localhost:5000/api/upload-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-                                const imageUrl = uploadRes.data.imageUrl;
-                                await axios.put(`http://localhost:5000/api/background-settings/client_background?userId=${userId}`, {
-                                    settingValue: imageUrl,
+                                let nextAuthBgUrl = authBgUrl;
+
+                                if (authBgFile) {
+                                    const formData = new FormData();
+                                    formData.append('image', authBgFile);
+                                    const uploadRes = await axios.post('http://localhost:5000/api/upload-image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                                    nextAuthBgUrl = uploadRes.data.imageUrl;
+                                }
+
+                                const updates = [
+                                    ['auth_background', nextAuthBgUrl],
+                                    ['client_theme_page_bg', clientThemeSettings.pageBg],
+                                    ['client_theme_card_bg', clientThemeSettings.cardBg],
+                                    ['client_theme_panel_bg', clientThemeSettings.panelBg],
+                                    ['client_theme_soft_bg', clientThemeSettings.softBg]
+                                ];
+
+                                await Promise.all(updates.map(([settingName, settingValue]) => axios.put(`http://localhost:5000/api/background-settings/${settingName}?userId=${userId}`, {
+                                    settingValue,
                                     userId
-                                });
-                                Swal.fire('Success', 'Background updated!', 'success');
-                                setWebsiteBgUrl(imageUrl);
+                                })));
+
+                                setAuthBgUrl(nextAuthBgUrl);
+                                setAuthBgFile(null);
+                                Swal.fire('Success', 'Website settings updated!', 'success');
                             } catch (err) {
-                                Swal.fire('Error', 'Failed to update background', 'error');
+                                Swal.fire('Error', 'Failed to update website settings', 'error');
                             } finally {
-                                setWebsiteBgLoading(false);
+                                setWebsiteSettingsLoading(false);
                             }
                         }}>
-                            <div className="form-group">
-                                <label>Upload Background Image</label>
-                                <input type="file" accept="image/*" onChange={e => setWebsiteBgFile(e.target.files[0])} />
+                            <div className="website-settings-grid">
+                                <section className="website-setting-card">
+                                    <h3>Login / Signup Background</h3>
+                                    <p>Used by Login, Signup, Verify Account, and Forgot Password.</p>
+                                    <div className="form-group">
+                                        <label>Upload Auth Background Image</label>
+                                        <input type="file" accept="image/*" onChange={e => setAuthBgFile(e.target.files?.[0] || null)} />
+                                    </div>
+                                    {authBgUrl && (
+                                        <img src={authBgUrl} alt="Current auth background" className="website-background-preview" />
+                                    )}
+                                </section>
+
+                                <section className="website-setting-card">
+                                    <h3>Client Theme Colors</h3>
+                                    <p>Applies to client content rectangles and page backgrounds. Headers and action buttons stay fixed.</p>
+                                    <div className="theme-color-grid">
+                                        <label>
+                                            Page Background
+                                            <input
+                                                type="color"
+                                                value={clientThemeSettings.pageBg}
+                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, pageBg: e.target.value }))}
+                                            />
+                                            <span>{clientThemeSettings.pageBg}</span>
+                                        </label>
+                                        <label>
+                                            Product/Card Background
+                                            <input
+                                                type="color"
+                                                value={clientThemeSettings.cardBg}
+                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, cardBg: e.target.value }))}
+                                            />
+                                            <span>{clientThemeSettings.cardBg}</span>
+                                        </label>
+                                        <label>
+                                            Panel Background
+                                            <input
+                                                type="color"
+                                                value={clientThemeSettings.panelBg}
+                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, panelBg: e.target.value }))}
+                                            />
+                                            <span>{clientThemeSettings.panelBg}</span>
+                                        </label>
+                                        <label>
+                                            Soft Accent Background
+                                            <input
+                                                type="color"
+                                                value={clientThemeSettings.softBg}
+                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, softBg: e.target.value }))}
+                                            />
+                                            <span>{clientThemeSettings.softBg}</span>
+                                        </label>
+                                    </div>
+                                </section>
                             </div>
                             <div className="modal-actions">
-                                <button type="submit" className="btn-primary" disabled={websiteBgLoading}>Save Background</button>
+                                <button type="submit" className="btn-primary" disabled={websiteSettingsLoading}>
+                                    {websiteSettingsLoading ? 'Saving...' : 'Save Website Settings'}
+                                </button>
                             </div>
                         </form>
-                        {websiteBgUrl && (
-                            <div style={{marginTop: 18, textAlign: 'center'}}>
-                                <div style={{fontSize: 14, color: '#555'}}>Current Background:</div>
-                                <img src={websiteBgUrl} alt="Current Background" style={{maxWidth: '100%', maxHeight: 180, borderRadius: 8, marginTop: 6}} />
-                            </div>
-                        )}
                     </div>
                 </div>
             )}

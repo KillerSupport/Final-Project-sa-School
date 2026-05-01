@@ -113,6 +113,8 @@ const WorkerDashboard = () => {
     const [manualOrderFormData, setManualOrderFormData] = useState({ customer_name: '', email: '', contact_number: '', discount_type: 'regular' });
     const [manualOrderProductSearch, setManualOrderProductSearch] = useState('');
     const [manualOrderSelectedProductId, setManualOrderSelectedProductId] = useState('');
+    const [manualOrderSearchFocused, setManualOrderSearchFocused] = useState(false);
+    const [manualOrderProductPickerOpen, setManualOrderProductPickerOpen] = useState(false);
     const [manualOrderItems, setManualOrderItems] = useState([]);
     const [manualOrderLoading, setManualOrderLoading] = useState(false);
 
@@ -155,7 +157,8 @@ const WorkerDashboard = () => {
     );
 
     const normalizeOrderRecord = (order) => {
-        const normalizedStatus = String(order?.order_status || order?.status || 'pending').toLowerCase();
+        const rawStatus = String(order?.order_status || order?.status || 'pending');
+        const normalizedStatus = rawStatus.trim().toLowerCase();
 
         return {
             ...order,
@@ -212,6 +215,21 @@ const WorkerDashboard = () => {
             fetchSalesHistory();
         }
     }, [activeTab]);
+
+    // Close any open order modal when the order filter changes
+    useEffect(() => {
+        // Close any modal that may produce an overlay so filters show clean results
+        if (showOrderModal || showModal || showCashierOrderModal || showCashModal || showManualOrderModal || showSalesOrderModal || showProfileModal) {
+            setShowOrderModal(false);
+            setSelectedOrder(null);
+            setShowModal(false);
+            setShowCashierOrderModal(false);
+            setShowCashModal(false);
+            setShowManualOrderModal(false);
+            setShowSalesOrderModal(false);
+            setShowProfileModal(false);
+        }
+    }, [orderFilter]);
 
     useEffect(() => {
         if (activeTab === 'sales' && salesView === 'history') {
@@ -703,6 +721,8 @@ const WorkerDashboard = () => {
             setManualOrderFormData({ customer_name: '', email: '', contact_number: '', discount_type: 'regular' });
             setManualOrderProductSearch('');
             setManualOrderSelectedProductId('');
+            setManualOrderProductPickerOpen(false);
+            setManualOrderSearchFocused(false);
             setManualOrderItems([]);
             fetchCashRegisterData();
             fetchTransactionLog();
@@ -937,9 +957,19 @@ const WorkerDashboard = () => {
         return products.filter((product) => {
             if (product.is_deleted || Number(product.stock || 0) <= 0) return false;
             if (!search) return true;
-            return String(product.product_name || '').toLowerCase().includes(search);
+            return String(product.product_name || product.name || '').toLowerCase().includes(search);
         });
     }, [products, manualOrderProductSearch]);
+
+    const selectedManualOrderProduct = useMemo(() => {
+        if (!manualOrderSelectedProductId) return null;
+        return products.find((product) => Number(product.product_id) === Number(manualOrderSelectedProductId)) || null;
+    }, [products, manualOrderSelectedProductId]);
+
+    const manualOrderSearchSuggestions = useMemo(() => {
+        if (!manualOrderProductSearch.trim()) return [];
+        return manualWalkInProductOptions.slice(0, 6);
+    }, [manualWalkInProductOptions, manualOrderProductSearch]);
 
     const manualOrderSubtotal = useMemo(() => {
         return manualOrderItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
@@ -996,6 +1026,14 @@ const WorkerDashboard = () => {
             ];
         });
         setManualOrderSelectedProductId('');
+        setManualOrderProductSearch('');
+        setManualOrderProductPickerOpen(false);
+    };
+
+    const handleSelectManualOrderProduct = (product) => {
+        setManualOrderSelectedProductId(String(product.product_id));
+        setManualOrderProductSearch(product.product_name || product.name || '');
+        setManualOrderProductPickerOpen(false);
     };
 
     const handleManualProductQtyChange = (productId, quantityValue) => {
@@ -1442,17 +1480,17 @@ const WorkerDashboard = () => {
                                 {orders.filter(o => orderFilter === 'all' || o.order_status === orderFilter).filter(o => 
                                     o.order_id?.toString().includes(orderSearch) || o.customer_name?.toLowerCase().includes(orderSearch.toLowerCase())
                                 ).map((order) => (
-                                    <div key={order.order_id} className="order-item" onClick={() => {setSelectedOrder(order); setShowOrderModal(true);}}>
-                                        <div className="order-header">
-                                            <span className="order-id">Order #{order.order_id}</span>
-                                            <div className="order-header-status-group">
+                                    <div key={order.order_id} className="worker-order-item" onClick={() => {setSelectedOrder(order); setShowOrderModal(true);}}>
+                                        <div className="worker-order-card-header">
+                                            <span className="worker-order-id">Order #{order.order_id}</span>
+                                            <div className="worker-order-header-status-group">
                                                 {pendingCancellationByOrderId[order.order_id] && (
-                                                    <span className="order-cancel-request-badge">Cancellation pending</span>
+                                                    <span className="worker-order-cancel-request-badge">Cancellation pending</span>
                                                 )}
-                                                <span className={`order-status ${order.order_status}`}>{order.order_status}</span>
+                                                <span className={`worker-order-status ${order.order_status}`}>{order.order_status}</span>
                                             </div>
                                         </div>
-                                        <div className="order-details">
+                                        <div className="worker-order-details">
                                             <p><strong>Customer:</strong> {order.customer_name}</p>
                                             <p><strong>Total:</strong> ₱{parseFloat(order.order_total).toFixed(2)}</p>
                                             <p><strong>Date:</strong> {new Date(order.order_date).toLocaleDateString()}</p>
@@ -1613,7 +1651,11 @@ const WorkerDashboard = () => {
                                         <div className="cash-transactions">
                                             <h4>Pending / Processing Orders Queue</h4>
                                             <button
-                                                onClick={() => setShowManualOrderModal(true)}
+                                                onClick={() => {
+                                                    setShowManualOrderModal(true);
+                                                    setManualOrderProductPickerOpen(false);
+                                                    setManualOrderSearchFocused(false);
+                                                }}
                                                 className="action-button add-button"
                                                 style={{ marginBottom: 12 }}
                                             >
@@ -2008,7 +2050,14 @@ const WorkerDashboard = () => {
 
             {/* Quick Invoice Modal */}
             {showManualOrderModal && (
-                <div className="modal-overlay" onClick={() => setShowManualOrderModal(false)}>
+                <div
+                    className="modal-overlay"
+                    onClick={() => {
+                        setShowManualOrderModal(false);
+                        setManualOrderProductPickerOpen(false);
+                        setManualOrderSearchFocused(false);
+                    }}
+                >
                     <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                         <h3>Register Walk-in Customer</h3>
                         <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '1rem' }}>Record a cash payment for a customer who didn't order online</p>
@@ -2048,29 +2097,87 @@ const WorkerDashboard = () => {
 
                         <div className="form-group">
                             <label>Search Product</label>
-                            <input
-                                type="text"
-                                value={manualOrderProductSearch}
-                                onChange={(e) => setManualOrderProductSearch(e.target.value)}
-                                className="input-field"
-                                placeholder="Type product name..."
-                            />
+                            <div className="manual-order-search-wrap">
+                                <input
+                                    type="text"
+                                    value={manualOrderProductSearch}
+                                    onChange={(e) => {
+                                        setManualOrderProductSearch(e.target.value);
+                                        setManualOrderProductPickerOpen(false);
+                                    }}
+                                    onFocus={() => setManualOrderSearchFocused(true)}
+                                    onBlur={() => setTimeout(() => setManualOrderSearchFocused(false), 120)}
+                                    className="input-field"
+                                    placeholder="Type product name..."
+                                />
+                                {manualOrderSearchFocused && manualOrderSearchSuggestions.length > 0 && (
+                                    <div className="manual-order-suggestions">
+                                        {manualOrderSearchSuggestions.map((product) => (
+                                            <button
+                                                key={`suggestion-${product.product_id}`}
+                                                type="button"
+                                                className="manual-order-suggestion"
+                                                onMouseDown={(e) => e.preventDefault()}
+                                                onClick={() => handleSelectManualOrderProduct(product)}
+                                            >
+                                                {product.product_name || product.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="manual-order-product-picker">
+                            <button
+                                type="button"
+                                className="input-field manual-order-select-trigger"
+                                onClick={() => setManualOrderProductPickerOpen((open) => !open)}
+                            >
+                                <span>
+                                    {selectedManualOrderProduct
+                                        ? selectedManualOrderProduct.product_name || selectedManualOrderProduct.name
+                                        : 'Select product...'}
+                                </span>
+                                <span className="manual-order-select-caret">v</span>
+                            </button>
+
+                            {manualOrderProductPickerOpen && (
+                                <div className="manual-order-product-list">
+                                    {manualWalkInProductOptions.length === 0 ? (
+                                        <p className="manual-order-empty-list">No products found</p>
+                                    ) : (
+                                        manualWalkInProductOptions.map((product) => (
+                                            <button
+                                                key={`picker-${product.product_id}`}
+                                                type="button"
+                                                className={`manual-order-product-option ${Number(manualOrderSelectedProductId) === Number(product.product_id) ? 'selected' : ''}`}
+                                                onClick={() => handleSelectManualOrderProduct(product)}
+                                            >
+                                                <img
+                                                    src={product.image_url || 'https://via.placeholder.com/64'}
+                                                    alt={product.product_name || product.name}
+                                                    className="manual-order-product-image"
+                                                />
+                                                <span className="manual-order-product-meta">
+                                                    <strong>{product.product_name || product.name}</strong>
+                                                    <span>{product.category || 'No category'} | Stock: {product.stock}</span>
+                                                    <span>₱{parseFloat(resolveProductPrice(product) || 0).toFixed(2)}</span>
+                                                </span>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         <div className="manual-order-product-row">
-                            <select
-                                value={manualOrderSelectedProductId}
-                                onChange={(e) => setManualOrderSelectedProductId(e.target.value)}
-                                className="input-field"
+                            <button
+                                type="button"
+                                className="save-button manual-order-add-btn"
+                                onClick={handleAddManualProduct}
+                                disabled={!manualOrderSelectedProductId}
                             >
-                                <option value="">Select product...</option>
-                                {manualWalkInProductOptions.map((product) => (
-                                    <option key={product.product_id} value={product.product_id}>
-                                        {product.product_name} | Stock: {product.stock} | ₱{parseFloat(resolveProductPrice(product) || 0).toFixed(2)}
-                                    </option>
-                                ))}
-                            </select>
-                            <button type="button" className="save-button manual-order-add-btn" onClick={handleAddManualProduct}>
                                 Add Product
                             </button>
                         </div>
@@ -2172,6 +2279,8 @@ const WorkerDashboard = () => {
                                     setManualOrderFormData({ customer_name: '', email: '', contact_number: '', discount_type: 'regular' });
                                     setManualOrderProductSearch('');
                                     setManualOrderSelectedProductId('');
+                                    setManualOrderProductPickerOpen(false);
+                                    setManualOrderSearchFocused(false);
                                     setManualOrderItems([]);
                                 }}
                                 className="cancel-button"

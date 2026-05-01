@@ -9,7 +9,16 @@ const Cart = () => {
     const [cartItems, setCartItems] = useState([]);
     const [loading, setLoading] = useState(true);
     const [userProfile, setUserProfile] = useState(null);
-    const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
+    const [clientTheme, setClientTheme] = useState({
+        pageBg: '#e9f7f6',
+        cardBg: '#ffffff',
+        panelBg: '#f8fcfc',
+        softBg: '#dff4f2'
+    });
+    const [previousOrders, setPreviousOrders] = useState([]);
+    const [previousOrderItemsById, setPreviousOrderItemsById] = useState({});
+    const [selectedPreviousItemKeys, setSelectedPreviousItemKeys] = useState({});
+    const [reorderLoading, setReorderLoading] = useState(false);
     const navigate = useNavigate();
     
     const user = JSON.parse(localStorage.getItem('user'));
@@ -22,19 +31,22 @@ const Cart = () => {
         }
         fetchCart();
         fetchUserProfile();
-        fetchBackground();
+        fetchPreviousOrders();
+        fetchClientTheme();
     }, [userId]);
 
-    const fetchBackground = async () => {
+    const fetchClientTheme = async () => {
         try {
             const res = await axios.get('http://localhost:5000/api/background-settings');
-            const setting = Array.isArray(res.data)
-                ? res.data.find((item) => item.setting_name === 'client_background')
-                : null;
-            setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
-        } catch {
-            setBackgroundImageUrl('/isda_bg.png');
-        }
+            const settings = Array.isArray(res.data) ? res.data : [];
+            const getSetting = (name, fallback) => settings.find((item) => item.setting_name === name)?.setting_value || fallback;
+            setClientTheme({
+                pageBg: getSetting('client_theme_page_bg', '#e9f7f6'),
+                cardBg: getSetting('client_theme_card_bg', '#ffffff'),
+                panelBg: getSetting('client_theme_panel_bg', '#f8fcfc'),
+                softBg: getSetting('client_theme_soft_bg', '#dff4f2')
+            });
+        } catch {}
     };
 
     const fetchUserProfile = async () => {
@@ -54,6 +66,33 @@ const Cart = () => {
             console.error('Error fetching cart:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchPreviousOrders = async () => {
+        try {
+            const res = await axios.get(`http://localhost:5000/api/orders/${userId}`);
+            const historicalOrders = (Array.isArray(res.data) ? res.data : [])
+                .filter((order) => ['completed', 'delivered'].includes(String(order.status || '').toLowerCase()))
+                .slice(0, 6);
+
+            setPreviousOrders(historicalOrders);
+            setSelectedPreviousItemKeys({});
+
+            const itemPairs = await Promise.all(historicalOrders.map(async (order) => {
+                try {
+                    const itemsRes = await axios.get(`http://localhost:5000/api/orders/${order.order_id}/items`);
+                    return [order.order_id, Array.isArray(itemsRes.data) ? itemsRes.data : []];
+                } catch {
+                    return [order.order_id, []];
+                }
+            }));
+
+            setPreviousOrderItemsById(Object.fromEntries(itemPairs));
+        } catch {
+            setPreviousOrders([]);
+            setPreviousOrderItemsById({});
+            setSelectedPreviousItemKeys({});
         }
     };
 
@@ -116,6 +155,59 @@ const Cart = () => {
         });
     };
 
+    const handleReorderItems = async (items) => {
+        const availableItems = (items || []).filter((item) => Number(item.product_id) > 0 && Number(item.quantity || 0) > 0);
+
+        if (availableItems.length === 0) {
+            Swal.fire('No Products', 'This order has no products that can be reordered.', 'info');
+            return;
+        }
+
+        setReorderLoading(true);
+        try {
+            await Promise.all(availableItems.map((item) => axios.post('http://localhost:5000/api/cart', {
+                userId,
+                productId: item.product_id,
+                quantity: Number(item.quantity || 1)
+            })));
+
+            await fetchCart();
+            setSelectedPreviousItemKeys({});
+            Swal.fire('Added to Cart', 'Previous order products were added to your cart.', 'success');
+        } catch {
+            Swal.fire('Error', 'Some products could not be added to cart.', 'error');
+        } finally {
+            setReorderLoading(false);
+        }
+    };
+
+    const getPreviousItemKey = (orderId, item) => `${orderId}:${item.order_item_id || item.product_id}`;
+
+    const handlePreviousItemCheck = (orderId, item, checked) => {
+        const key = getPreviousItemKey(orderId, item);
+        setSelectedPreviousItemKeys((prev) => ({
+            ...prev,
+            [key]: checked
+        }));
+    };
+
+    const getSelectedPreviousItems = () => {
+        return previousOrders.flatMap((order) => {
+            const items = previousOrderItemsById[order.order_id] || [];
+            return items.filter((item) => selectedPreviousItemKeys[getPreviousItemKey(order.order_id, item)]);
+        });
+    };
+
+    const handleReorderSelectedItems = () => {
+        const selectedItems = getSelectedPreviousItems();
+        if (selectedItems.length === 0) {
+            Swal.fire('Select Products', 'Please check at least one previously ordered product to reorder.', 'info');
+            return;
+        }
+
+        handleReorderItems(selectedItems);
+    };
+
     if (loading) {
         return <div className="loading">Loading cart...</div>;
     }
@@ -123,7 +215,12 @@ const Cart = () => {
     return (
         <div
             className="cart-container"
-            style={{ backgroundImage: `linear-gradient(rgba(11, 31, 42, 0.32), rgba(11, 31, 42, 0.32)), url('${backgroundImageUrl}')` }}
+            style={{
+                '--client-page-bg': clientTheme.pageBg,
+                '--client-card-bg': clientTheme.cardBg,
+                '--client-panel-bg': clientTheme.panelBg,
+                '--client-soft-bg': clientTheme.softBg
+            }}
         >
             <div className="cart-header glass-panel">
                 <div className="cart-header-left">
@@ -256,6 +353,64 @@ const Cart = () => {
                     </div>
                 </div>
             )}
+
+            <div className="previous-orders-panel">
+                <div className="previous-orders-header">
+                    <div>
+                        <h2>Previously Ordered Products</h2>
+                        <p>Check only the products you want to add back to your cart.</p>
+                    </div>
+                    <button
+                        type="button"
+                        className="previous-order-add-btn"
+                        onClick={handleReorderSelectedItems}
+                        disabled={reorderLoading}
+                    >
+                        {reorderLoading ? 'Adding...' : 'Add Selected to Cart'}
+                    </button>
+                </div>
+
+                {previousOrders.length === 0 ? (
+                    <p className="previous-orders-empty">No completed previous orders found yet.</p>
+                ) : (
+                    <div className="previous-orders-list">
+                        {previousOrders.map((order) => {
+                            const items = previousOrderItemsById[order.order_id] || [];
+                            return (
+                                <div key={order.order_id} className="previous-order-card">
+                                    <div className="previous-order-card-top">
+                                        <div>
+                                            <strong>Order #{order.order_id}</strong>
+                                            <span>{new Date(order.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+                                    <div className="previous-order-products">
+                                        {items.length === 0 ? (
+                                            <span className="previous-order-no-items">No items found.</span>
+                                        ) : items.map((item) => {
+                                            const key = getPreviousItemKey(order.order_id, item);
+                                            return (
+                                                <label className="previous-order-product" key={key}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={Boolean(selectedPreviousItemKeys[key])}
+                                                        onChange={(e) => handlePreviousItemCheck(order.order_id, item, e.target.checked)}
+                                                    />
+                                                    <img src={item.image_url || 'https://via.placeholder.com/56'} alt={item.name} />
+                                                    <div>
+                                                        <strong>{item.name}</strong>
+                                                        <span>Qty {item.quantity} | ₱{Number(item.price || 0).toFixed(2)}</span>
+                                                    </div>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

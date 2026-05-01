@@ -20,7 +20,7 @@ const Verification = () => {
         try {
             const res = await axios.get('http://localhost:5000/api/background-settings');
             const setting = Array.isArray(res.data)
-                ? res.data.find((item) => item.setting_name === 'client_background')
+                ? res.data.find((item) => item.setting_name === 'auth_background')
                 : null;
             setBackgroundImageUrl(setting?.setting_value || '/isda_bg.png');
         } catch {

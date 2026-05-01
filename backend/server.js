@@ -1637,7 +1637,7 @@ app.get('/api/worker/orders', checkRole(['admin', 'worker']), (req, res) => {
     const sql = `
         SELECT o.order_id,
                o.total_amount AS order_total,
-               CASE WHEN LOWER(o.status) = 'processing' THEN 'pending' ELSE o.status END AS order_status,
+               CASE WHEN LOWER(o.status) = 'processing' THEN 'pending' ELSE LOWER(o.status) END AS order_status,
                o.created_at AS order_date,
                o.updated_at,
                o.shipping_address,
@@ -3471,11 +3471,22 @@ app.get('/api/background-settings', (req, res) => {
 app.put('/api/background-settings/:settingName', checkRole('admin'), (req, res) => {
     const { settingName } = req.params;
     const { settingValue } = req.body;
-    
+
     const sql = "UPDATE background_settings SET setting_value = ? WHERE setting_name = ?";
-    db.query(sql, [settingValue, settingName], (err) => {
+    db.query(sql, [settingValue, settingName], (err, result) => {
         if (err) return res.status(500).json({ message: "Database error" });
-        res.json({ message: "Background setting updated" });
+        if (result.affectedRows > 0) {
+            return res.json({ message: "Background setting updated" });
+        }
+
+        db.query(
+            "INSERT INTO background_settings (setting_id, setting_name, setting_value, description) SELECT COALESCE(MAX(setting_id), 0) + 1, ?, ?, ? FROM background_settings",
+            [settingName, settingValue, `Website setting: ${settingName}`],
+            (insertErr) => {
+                if (insertErr) return res.status(500).json({ message: "Database error" });
+                res.json({ message: "Background setting updated" });
+            }
+        );
     });
 });
 
@@ -3544,7 +3555,7 @@ app.get('/api/admin/orders', checkRole('admin'), (req, res) => {
         if (err) return res.status(500).json({ message: "Database error" });
         const normalized = (results || []).map((row) => ({
             ...row,
-            status: String(row.status || '').toLowerCase() === 'processing' ? 'pending' : row.status
+            status: String(row.status || '').trim().toLowerCase() === 'processing' ? 'pending' : String(row.status || '').trim().toLowerCase()
         }));
         res.json(normalized);
     });
