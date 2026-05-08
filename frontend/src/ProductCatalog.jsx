@@ -603,7 +603,7 @@ const ProductCatalog = () => {
                                 aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
                                 disabled={!speechSupported}
                             >
-                                {isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                                {isListening ? <Mic size={18} /> : <MicOff size={18} />}
                             </button>
                         </div>
                     </div>
