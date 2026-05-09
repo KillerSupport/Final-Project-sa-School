@@ -175,6 +175,118 @@ Admin Dashboard → Manage Products (CRUD) → Track Orders
 
 ---
 
+## 🧭 Activity Diagram Flows from Approved Use Case Diagram(s)
+
+Use these as direct step lists for UML/draw.io activity diagrams with swimlanes.
+
+### 1) Login / Forgot Password
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer opens login page.
+  2. Buyer enters email/password.
+  3. System validates credentials.
+  4. **Decision:** Credentials valid?
+     - **No:** Show error. Buyer may retry or choose **Forgot Password**.
+     - **Yes:** Create session and redirect to catalog/dashboard.
+  5. *(Optional branch from Login use case)* Forgot Password:
+     - Buyer submits email.
+     - System verifies account and sends reset flow.
+     - Buyer sets new password, then returns to Login.
+
+### 2) Register / Verify Account
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer opens signup page.
+  2. Buyer fills registration details.
+  3. System validates required fields and duplicates.
+  4. **Decision:** Input valid?
+     - **No:** Show validation errors and return to form.
+     - **Yes:** Create account record.
+  5. System starts account verification (OTP/email).
+  6. Buyer submits verification code.
+  7. **Decision:** Code valid?
+     - **No:** Retry verification.
+     - **Yes:** Mark account verified and proceed to Login.
+
+### 3) Browse Products
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer opens product catalog.
+  2. System loads product list.
+  3. Buyer searches/filters/views product details.
+  4. **Decision:** Add item to cart?
+     - **No:** Continue browsing loop.
+     - **Yes:** Go to **Add to Cart** flow.
+
+### 4) Add to Cart / Remove from Cart
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer clicks **Add to Cart** on a product.
+  2. System checks stock and existing cart line.
+  3. **Decision:** Stock available?
+     - **No:** Show out-of-stock message, return to Browse.
+     - **Yes:** Insert/update cart item.
+  4. Buyer views cart.
+  5. **Decision:** Remove item?
+     - **Yes:** System removes selected cart row, refresh cart.
+     - **No:** Keep cart as-is.
+  6. **Decision:** Proceed to Checkout?
+     - **No:** Back to Browse loop.
+     - **Yes:** Go to **Place Order / Checkout**.
+
+### 5) Place Order / Checkout / Process Payment
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer starts checkout from cart.
+  2. System validates cart not empty.
+  3. **Decision:** Cart empty?
+     - **Yes:** Return to Browse/Cart.
+     - **No:** Continue.
+  4. Buyer provides shipping and payment details.
+  5. System recalculates totals and validates stock again.
+  6. **Decision:** Final validation passed?
+     - **No:** Show issue and return to Cart/Checkout edits.
+     - **Yes:** Create order + order items, then clear cart.
+  7. System marks order as placed and records payment-processing step.
+  8. Buyer receives order confirmation and may view order history.
+
+### 6) Admin/Worker Order Processing (Approve / Cancel / Issue Invoice)
+- **Actors (swimlanes):** Admin/Worker, System
+- **Flow:**
+  1. Admin/Worker opens order management.
+  2. System shows pending/active orders.
+  3. Admin/Worker selects an order.
+  4. **Decision:** Approve or Cancel?
+     - **Approve branch:**
+       1. Confirm payment/process payment status.
+       2. Update order status to approved/processing/completed (based on policy).
+       3. Generate invoice.
+       4. Store invoice reference and show success.
+     - **Cancel branch:**
+       1. Record cancellation action/reason.
+       2. Update order status to cancelled.
+       3. **Decision:** Invoice already generated?
+          - **Yes:** Mark invoice as cancelled/void (if applicable).
+          - **No:** End cancellation flow.
+  5. System updates order history visible to buyer.
+
+### 7) View Order History (Short Use Case)
+- **Actors (swimlanes):** Buyer, System
+- **Flow:**
+  1. Buyer opens order history.
+  2. System loads buyer orders.
+  3. Buyer views status/details.
+  4. *(Optional)* Buyer chooses specific order actions allowed by status.
+
+### 8) Logout (Short Use Case)
+- **Actors (swimlanes):** Buyer/Admin/Worker, System
+- **Flow:**
+  1. User clicks logout.
+  2. System clears session/token.
+  3. Redirect to login/home page.
+
+---
+
 ## 🎨 Features Details
 
 ### Product Catalog
