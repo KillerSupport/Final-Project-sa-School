@@ -60,7 +60,8 @@ const ProductCatalog = () => {
     const userRole = user?.role_name || null;
     const isAdmin = String(userRole || '').toLowerCase() === 'admin';
     const isClientLike = ['client', 'customer'].includes(String(userRole || '').toLowerCase());
-    const displayName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Client';
+    const isGuest = !userId;
+    const displayName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Guest';
     const profileImageStorageKey = userId ? `clientProfileImage:${userId}` : 'clientProfileImage';
     const [profileImagePreview, setProfileImagePreview] = useState(localStorage.getItem(profileImageStorageKey) || user?.profile_image_url || user?.id_image_url || '');
     const [profileImageFile, setProfileImageFile] = useState(null);
@@ -172,6 +173,27 @@ const ProductCatalog = () => {
         localStorage.removeItem('sessionLogId');
         localStorage.removeItem('sessionToken');
         navigate('/');
+    };
+
+    const showLoginPrompt = (message = 'Please login or create an account to continue.') => {
+        Swal.fire({
+            title: 'Login Required',
+            text: message,
+            icon: 'info',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'Login',
+            denyButtonText: 'Sign Up',
+            cancelButtonText: 'Not Now',
+            confirmButtonColor: '#09609c',
+            denyButtonColor: '#0ea5a8'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                navigate('/login');
+            } else if (result.isDenied) {
+                navigate('/signup');
+            }
+        });
     };
 
     useEffect(() => {
@@ -304,8 +326,7 @@ const ProductCatalog = () => {
 
     const handleAddToCart = async (product) => {
         if (!userId) {
-            Swal.fire('Login Required', 'Please login first', 'warning');
-            navigate('/');
+            showLoginPrompt('Please login or sign up before adding products to your cart.');
             return;
         }
 
@@ -360,8 +381,6 @@ const ProductCatalog = () => {
     };
 
     const openProfileModal = async () => {
-        if (!userId) return;
-
         if (accountSidebarCloseTimerRef.current) {
             clearTimeout(accountSidebarCloseTimerRef.current);
             accountSidebarCloseTimerRef.current = null;
@@ -369,6 +388,12 @@ const ProductCatalog = () => {
 
         setShowProfileModal(true);
         setIsAccountSidebarClosing(false);
+
+        if (!userId) {
+            setProfileLoading(false);
+            return;
+        }
+
         setAccountSettingsSection('profilePicture');
         setProfileLoading(true);
 
@@ -616,40 +641,53 @@ const ProductCatalog = () => {
         >
             <div className="catalog-header glass-panel">
                 <div className="client-header-left">
-                    {isClientLike && (
+                    {(isClientLike || isGuest) && (
                         <button
                             className={`client-menu-button ${showProfileModal ? 'is-open' : ''}`}
                             type="button"
                             onClick={showProfileModal ? closeAccountSidebar : openProfileModal}
-                            aria-label={showProfileModal ? 'Close account settings' : 'Open account settings'}
+                            aria-label={showProfileModal ? 'Close menu' : 'Open menu'}
                             aria-expanded={showProfileModal}
-                            title={showProfileModal ? 'Close account settings' : 'Account settings'}
+                            title={showProfileModal ? 'Close menu' : 'Store menu'}
                         >
                             {showProfileModal ? <X size={20} /> : <Menu size={20} />}
                         </button>
                     )}
-                    <button
-                        className="client-profile-button"
-                        type="button"
-                        onClick={() => navigate('/account/settings')}
-                        aria-label="Open profile settings"
-                        title="Profile settings"
-                    >
-                        {profileImagePreview ? (
-                            <img src={profileImagePreview} alt="Profile" className="client-profile-image" />
-                        ) : (
-                            <div className="client-profile-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
-                        )}
-                    </button>
+                    {!isGuest && (
+                        <button
+                            className="client-profile-button"
+                            type="button"
+                            onClick={() => navigate('/account/settings')}
+                            aria-label="Open profile settings"
+                            title="Profile settings"
+                        >
+                            {profileImagePreview ? (
+                                <img src={profileImagePreview} alt="Profile" className="client-profile-image" />
+                            ) : (
+                                <div className="client-profile-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
+                            )}
+                        </button>
+                    )}
                     <div className="client-header-user-meta">
                         <div className="client-header-name">{displayName || 'Client'}</div>
-                        <div className="client-header-role">{user?.email || 'Guest'}</div>
+                        <div className="client-header-role">{user?.email || 'Browse products freely'}</div>
                     </div>
                 </div>
 
                 <h1>TongTong Fish Culture</h1>
 
                 <div className="client-header-right">
+                    {isGuest && (
+                        <div className="client-auth-actions">
+                            <button type="button" className="client-login-link" onClick={() => navigate('/login')}>
+                                Login
+                            </button>
+                            <button type="button" className="client-signup-link" onClick={() => navigate('/signup')}>
+                                Sign Up
+                            </button>
+                        </div>
+                    )}
+
                     {isClientLike && (
                         <>
                             <button className="client-cart-button" onClick={() => navigate('/cart')} title="Cart">
@@ -808,37 +846,43 @@ const ProductCatalog = () => {
 
             {showProfileModal && (
                 <div className={`account-sidebar-overlay ${isAccountSidebarClosing ? 'is-closing' : 'is-open'}`} onClick={closeAccountSidebar}>
-                    <aside className="account-sidebar" onClick={(e) => e.stopPropagation()} aria-label="Account settings">
+                    <aside className="account-sidebar" onClick={(e) => e.stopPropagation()} aria-label={isGuest ? 'Store information' : 'Account settings'}>
                         <div className="account-sidebar-header">
-                            <button className="account-sidebar-avatar-button" type="button" onClick={() => navigate('/account/profile-picture')}>
-                                {profileImagePreview ? (
-                                    <img src={profileImagePreview} alt="Profile" className="account-sidebar-avatar" />
-                                ) : (
-                                    <div className="account-sidebar-avatar account-sidebar-avatar-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
-                                )}
-                            </button>
+                            {!isGuest && (
+                                <button className="account-sidebar-avatar-button" type="button" onClick={() => navigate('/account/profile-picture')}>
+                                    {profileImagePreview ? (
+                                        <img src={profileImagePreview} alt="Profile" className="account-sidebar-avatar" />
+                                    ) : (
+                                        <div className="account-sidebar-avatar account-sidebar-avatar-fallback">{displayName ? displayName[0].toUpperCase() : 'C'}</div>
+                                    )}
+                                </button>
+                            )}
                             <div className="account-sidebar-identity">
-                                <h3>{displayName || 'Client'}</h3>
-                                <p>{user?.email || 'Guest'}</p>
+                                <h3>{isGuest ? 'TongTong Fish Culture' : (displayName || 'Client')}</h3>
+                                <p>{isGuest ? 'Browse now, login when you are ready to order.' : (user?.email || 'Guest')}</p>
                             </div>
                             <button className="close-button" onClick={closeAccountSidebar} aria-label="Close account settings"><X size={24} /></button>
                         </div>
 
                         <div className="account-sidebar-nav" aria-label="Edit personal information sections">
-                            <button
-                                type="button"
-                                className="account-sidebar-nav-title account-sidebar-main-link"
-                                onClick={() => navigate('/account/settings')}
-                            >
-                                Edit Personal Information
-                            </button>
-                            <button
-                                type="button"
-                                className="account-sidebar-nav-title account-sidebar-main-link"
-                                onClick={() => navigate('/order-info')}
-                            >
-                                Order Details
-                            </button>
+                            {!isGuest && (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="account-sidebar-nav-title account-sidebar-main-link"
+                                        onClick={() => navigate('/account/settings')}
+                                    >
+                                        Edit Personal Information
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="account-sidebar-nav-title account-sidebar-main-link"
+                                        onClick={() => navigate('/order-info')}
+                                    >
+                                        Order Details
+                                    </button>
+                                </>
+                            )}
                             <div className="account-sidebar-contact-info">
                                 <h4>Contact and Information</h4>
                                 <div>
@@ -854,12 +898,23 @@ const ProductCatalog = () => {
                         </div>
 
                         <div className="account-sidebar-actions">
-                            <button type="button" className="btn-logout" onClick={handleLogout}>
-                                <LogOut size={16} /> Logout
-                            </button>
+                            {isGuest ? (
+                                <div className="guest-sidebar-actions">
+                                    <button type="button" className="btn-primary" onClick={() => navigate('/login')}>
+                                        Login
+                                    </button>
+                                    <button type="button" className="btn-secondary" onClick={() => navigate('/signup')}>
+                                        Create Account
+                                    </button>
+                                </div>
+                            ) : (
+                                <button type="button" className="btn-logout" onClick={handleLogout}>
+                                    <LogOut size={16} /> Logout
+                                </button>
+                            )}
                         </div>
 
-                        {profileLoading ? (
+                        {!isGuest && (profileLoading ? (
                             <p>Loading...</p>
                         ) : (
                             <form onSubmit={handleProfileSave} className="profile-form">
@@ -1112,7 +1167,7 @@ const ProductCatalog = () => {
                                     </button>
                                 </div>
                             </form>
-                        )}
+                        ))}
                     </aside>
                 </div>
             )}

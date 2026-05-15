@@ -23,7 +23,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
         <Router>
             <Routes>
-                <Route path="/" element={<Login />} />
+                <Route path="/" element={<ProductCatalog />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/verify" element={<Verification />} />

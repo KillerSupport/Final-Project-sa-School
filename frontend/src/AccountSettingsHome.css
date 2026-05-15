@@ -1,6 +1,6 @@
 .account-settings-home-screen {
     min-height: 100vh;
-    background: #e9f7f6;
+    background: var(--client-page-bg, #e9f7f6);
     color: #0f172a;
     padding: 20px;
     box-sizing: border-box;
@@ -83,7 +83,7 @@
 
 .account-settings-home-intro,
 .account-settings-options {
-    background: #ffffff;
+    background: var(--client-card-bg, #ffffff);
     border: 1px solid #d6ebe9;
     border-radius: 14px;
     box-shadow: 0 12px 34px rgba(15, 23, 42, 0.1);
@@ -132,7 +132,7 @@
     min-height: 118px;
     border: 1px solid #d6ebe9;
     border-radius: 8px;
-    background: #ffffff;
+    background: var(--client-card-bg, #ffffff);
     color: #0f172a;
     padding: 14px;
     display: grid;
@@ -145,7 +145,7 @@
 }
 
 .account-settings-option:hover {
-    background: #ccfbf1;
+    background: var(--client-soft-bg, #ccfbf1);
     border-color: #0ea5a8;
     transform: translateY(-1px);
 }

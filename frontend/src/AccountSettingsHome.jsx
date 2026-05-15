@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, Camera, ChevronRight, KeyRound, LogOut, UserRound } from 'lucide-react';
 import axios from 'axios';
+import useClientTheme, { getClientThemeStyle } from './useClientTheme';
 import './AccountSettingsHome.css';
 
 const settingsOptions = [
@@ -33,6 +34,7 @@ const settingsOptions = [
 
 const AccountSettingsHome = () => {
     const navigate = useNavigate();
+    const clientTheme = useClientTheme();
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userRole = String(user?.role_name || '').toLowerCase();
     const returnPath = userRole === 'worker'
@@ -63,7 +65,7 @@ const AccountSettingsHome = () => {
     };
 
     return (
-        <div className="account-settings-home-screen">
+        <div className="account-settings-home-screen" style={getClientThemeStyle(clientTheme)}>
             <header className="account-settings-home-header">
                 <button className="account-settings-home-back" type="button" onClick={() => navigate(returnPath)} aria-label="Back">
                     <ArrowLeft size={20} />

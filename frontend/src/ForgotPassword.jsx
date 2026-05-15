@@ -94,7 +94,7 @@ const ForgotPassword = () => {
                             link.onclick = (e) => {
                                 e.preventDefault();
                                 Swal.close();
-                                navigate('/verify-account', { state: { email } });
+                                navigate('/verify', { state: { email } });
                             };
                         }
                     }
@@ -134,7 +134,7 @@ const ForgotPassword = () => {
             });
             if (res.status === 200) {
                 Swal.fire('Success', 'Password updated!', 'success');
-                navigate('/');
+                navigate('/login');
             }
         } catch (error) {
             Swal.fire('Error', error.response?.data?.message || 'OTP timed out or invalid.', 'error');
@@ -270,9 +270,9 @@ const ForgotPassword = () => {
                             </div>
                         )}
 
-                        <Link to="/" className="back-to-login">
+                        <Link to="/login" className="back-to-login">
                             <ArrowLeft size={16} />
-                            <span>Back to Login</span>
+                            <span>Already have an account? Login</span>
                         </Link>
                     </div>
                 </div>

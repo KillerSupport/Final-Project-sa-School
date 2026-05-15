@@ -427,7 +427,7 @@ const Signup = () => {
                     </div>
                     <div className="signup-footer-compact">
                         <button className="signup-btn-small" onClick={handleSignup}>Sign Up</button>
-                        <div className="back-link-small" onClick={() => navigate('/')}><ArrowLeft size={14} /> Back to Login</div>
+                        <div className="back-link-small" onClick={() => navigate('/login')}><ArrowLeft size={14} /> Already have an account? Login</div>
                     </div>
                 </div>
             </div>

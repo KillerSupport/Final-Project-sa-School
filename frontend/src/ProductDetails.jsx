@@ -21,6 +21,27 @@ const ProductDetails = () => {
     
     const userId = JSON.parse(localStorage.getItem('user'))?.user_id || null;
 
+    const showLoginPrompt = (message = 'Please login or create an account to continue.') => {
+        Swal.fire({
+            title: 'Login Required',
+            text: message,
+            icon: 'info',
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: 'Login',
+            denyButtonText: 'Sign Up',
+            cancelButtonText: 'Not Now',
+            confirmButtonColor: '#09609c',
+            denyButtonColor: '#0ea5a8'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                navigate('/login');
+            } else if (result.isDenied) {
+                navigate('/signup');
+            }
+        });
+    };
+
     useEffect(() => {
         fetchProduct();
         fetchClientTheme();
@@ -66,13 +87,7 @@ const ProductDetails = () => {
 
     const handleAddToCart = async () => {
         if (!userId) {
-            Swal.fire({
-                title: 'Please Login',
-                text: 'You need to login to add items to cart',
-                icon: 'warning',
-                confirmButtonText: 'Go to Login',
-                confirmButtonColor: '#2563eb'
-            }).then(() => navigate('/'));
+            showLoginPrompt('Please login or sign up before adding products to your cart.');
             return;
         }
 
@@ -145,7 +160,13 @@ const ProductDetails = () => {
                 <div className="product-details-header-right">
                     <button
                         className="cart-shortcut-button"
-                        onClick={() => navigate('/cart')}
+                        onClick={() => {
+                            if (!userId) {
+                                showLoginPrompt('Please login or sign up to view your cart.');
+                                return;
+                            }
+                            navigate('/cart');
+                        }}
                         title="Go to cart"
                         aria-label="Go to cart"
                     >

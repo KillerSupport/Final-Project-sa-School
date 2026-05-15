@@ -7,6 +7,53 @@ import UserManagement from './UserManagement';
 import Analytics from './Analytics';
 import './AdminDashboard.css';
 
+const CLIENT_THEME_PRESETS = [
+    {
+        id: 'clear-lagoon',
+        name: 'Clear Lagoon',
+        description: 'Bright aqua background with clean white cards.',
+        colors: {
+            pageBg: '#e9f7f6',
+            cardBg: '#ffffff',
+            panelBg: '#f8fcfc',
+            softBg: '#dff4f2'
+        }
+    },
+    {
+        id: 'coral-reef',
+        name: 'Coral Reef',
+        description: 'Soft reef water tones with gentle mint highlights.',
+        colors: {
+            pageBg: '#dff7f5',
+            cardBg: '#ffffff',
+            panelBg: '#f2fbfa',
+            softBg: '#ccfbf1'
+        }
+    },
+    {
+        id: 'deep-current',
+        name: 'Deep Current',
+        description: 'Cool blue-tinted surfaces that keep text readable.',
+        colors: {
+            pageBg: '#dbeafe',
+            cardBg: '#f8fafc',
+            panelBg: '#eff6ff',
+            softBg: '#bfdbfe'
+        }
+    },
+    {
+        id: 'sea-glass',
+        name: 'Sea Glass',
+        description: 'Calm green-blue palette for a softer storefront.',
+        colors: {
+            pageBg: '#dcfce7',
+            cardBg: '#ffffff',
+            panelBg: '#f0fdf4',
+            softBg: '#bbf7d0'
+        }
+    }
+];
+
 const toSafeDate = (value) => {
     const date = new Date(value || 0);
     return Number.isNaN(date.getTime()) ? new Date(0) : date;
@@ -100,6 +147,12 @@ const AdminDashboard = () => {
         panelBg: '#f8fcfc',
         softBg: '#dff4f2'
     });
+    const activeClientThemePreset = useMemo(() => CLIENT_THEME_PRESETS.find((preset) => (
+        preset.colors.pageBg === clientThemeSettings.pageBg &&
+        preset.colors.cardBg === clientThemeSettings.cardBg &&
+        preset.colors.panelBg === clientThemeSettings.panelBg &&
+        preset.colors.softBg === clientThemeSettings.softBg
+    ))?.id || '', [clientThemeSettings]);
 
     const handleLogout = async () => {
         try {
@@ -1435,44 +1488,46 @@ const AdminDashboard = () => {
 
                                 <section className="website-setting-card">
                                     <h3>Client Theme Colors</h3>
-                                    <p>Applies to client content rectangles and page backgrounds. Headers and action buttons stay fixed.</p>
-                                    <div className="theme-color-grid">
-                                        <label>
-                                            Page Background
-                                            <input
-                                                type="color"
-                                                value={clientThemeSettings.pageBg}
-                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, pageBg: e.target.value }))}
-                                            />
-                                            <span>{clientThemeSettings.pageBg}</span>
-                                        </label>
-                                        <label>
-                                            Product/Card Background
-                                            <input
-                                                type="color"
-                                                value={clientThemeSettings.cardBg}
-                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, cardBg: e.target.value }))}
-                                            />
-                                            <span>{clientThemeSettings.cardBg}</span>
-                                        </label>
-                                        <label>
-                                            Panel Background
-                                            <input
-                                                type="color"
-                                                value={clientThemeSettings.panelBg}
-                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, panelBg: e.target.value }))}
-                                            />
-                                            <span>{clientThemeSettings.panelBg}</span>
-                                        </label>
-                                        <label>
-                                            Soft Accent Background
-                                            <input
-                                                type="color"
-                                                value={clientThemeSettings.softBg}
-                                                onChange={(e) => setClientThemeSettings((prev) => ({ ...prev, softBg: e.target.value }))}
-                                            />
-                                            <span>{clientThemeSettings.softBg}</span>
-                                        </label>
+                                    <p>Choose a fish-store theme preset for client pages and account screens. Login and signup background image stays separate.</p>
+                                    <div className="theme-preset-grid" role="radiogroup" aria-label="Client theme presets">
+                                        {CLIENT_THEME_PRESETS.map((preset) => (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                className={`theme-preset-option${activeClientThemePreset === preset.id ? ' selected' : ''}`}
+                                                onClick={() => setClientThemeSettings(preset.colors)}
+                                                aria-pressed={activeClientThemePreset === preset.id}
+                                            >
+                                                <span className="theme-preset-swatches" aria-hidden="true">
+                                                    <span style={{ background: preset.colors.pageBg }} />
+                                                    <span style={{ background: preset.colors.cardBg }} />
+                                                    <span style={{ background: preset.colors.panelBg }} />
+                                                    <span style={{ background: preset.colors.softBg }} />
+                                                </span>
+                                                <strong>{preset.name}</strong>
+                                                <small>{preset.description}</small>
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {!activeClientThemePreset && (
+                                        <p className="theme-custom-note">Current saved colors are custom. Pick one preset above to replace them with a safer ocean palette.</p>
+                                    )}
+                                    <div
+                                        className="theme-preview"
+                                        style={{
+                                            '--preview-page-bg': clientThemeSettings.pageBg,
+                                            '--preview-card-bg': clientThemeSettings.cardBg,
+                                            '--preview-panel-bg': clientThemeSettings.panelBg,
+                                            '--preview-soft-bg': clientThemeSettings.softBg
+                                        }}
+                                    >
+                                        <div className="theme-preview-card">
+                                            <div className="theme-preview-panel">
+                                                <strong>Client Preview</strong>
+                                                <span>Product cards, panels, and account areas stay readable.</span>
+                                            </div>
+                                            <span className="theme-preview-badge">Freshwater</span>
+                                        </div>
                                     </div>
                                 </section>
                             </div>

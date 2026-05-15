@@ -61,7 +61,7 @@ const Verification = () => {
                     text: 'You can now log in to your account.',
                     confirmButtonColor: '#007bff'
                 });
-                navigate('/'); // Redirect to Login
+                navigate('/login');
             }
         } catch (err) {
             Swal.fire('Invalid Code', 'The OTP you entered is incorrect or has expired.', 'error');
@@ -127,8 +127,8 @@ const Verification = () => {
                             </button>
                         </div>
 
-                        <button className="back-to-login-btn" onClick={() => navigate('/')}>
-                            <ArrowLeft size={16} /> Back to Login
+                        <button className="back-to-login-btn" onClick={() => navigate('/login')}>
+                            <ArrowLeft size={16} /> Already verified? Login
                         </button>
                     </div>
                 </div>

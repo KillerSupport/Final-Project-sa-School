@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { ArrowLeft, Eye, EyeOff, LogOut } from 'lucide-react';
+import useClientTheme, { getClientThemeStyle } from './useClientTheme';
 import './AccountSettingsPage.css';
 
 const ALLOWED_SUFFIXES = ['', 'Jr.', 'Sr.', 'II', 'III', 'IV', 'V'];
@@ -16,6 +17,7 @@ const sectionLabels = {
 
 const AccountSettingsPage = ({ section }) => {
     const navigate = useNavigate();
+    const clientTheme = useClientTheme();
     const user = JSON.parse(localStorage.getItem('user') || 'null');
     const userId = user?.user_id || null;
     const userRole = String(user?.role_name || '').toLowerCase();
@@ -444,7 +446,7 @@ const AccountSettingsPage = ({ section }) => {
     const allSections = ['profilePicture', 'personalInfo', 'discountVerification', 'changePassword'];
 
     return (
-        <div className="account-settings-screen">
+        <div className="account-settings-screen" style={getClientThemeStyle(clientTheme)}>
             <header className="account-settings-header">
                 <button className="account-settings-back" type="button" onClick={() => navigate(returnPath)} aria-label="Back">
                     <ArrowLeft size={20} />

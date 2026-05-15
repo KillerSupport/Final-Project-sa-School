@@ -1,6 +1,6 @@
 .account-settings-screen {
     min-height: 100vh;
-    background: #e9f7f6;
+    background: var(--client-page-bg, #e9f7f6);
     color: #0f172a;
     padding: 24px;
     box-sizing: border-box;
@@ -61,7 +61,7 @@
 
 .account-settings-nav,
 .account-settings-card {
-    background: #ffffff;
+    background: var(--client-card-bg, #ffffff);
     border: 1px solid #d6ebe9;
     border-radius: 14px;
     box-shadow: 0 12px 34px rgba(15, 23, 42, 0.1);
@@ -102,7 +102,7 @@
     width: 100%;
     border: 1px solid #d6ebe9;
     border-radius: 8px;
-    background: #ffffff;
+    background: var(--client-card-bg, #ffffff);
     color: #0f172a;
     padding: 11px 12px;
     text-align: left;
@@ -112,7 +112,7 @@
 
 .account-settings-nav button:hover,
 .account-settings-nav button.active {
-    background: #ccfbf1;
+    background: var(--client-soft-bg, #ccfbf1);
     border-color: #0ea5a8;
     color: #041927;
 }
@@ -139,7 +139,7 @@
     border: 1px solid #d6ebe9;
     border-top: 5px solid #0ea5a8;
     border-radius: 12px;
-    background: #f8fffe;
+    background: var(--client-panel-bg, #f8fffe);
     padding: 24px;
     box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
 }
