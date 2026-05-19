@@ -12,10 +12,6 @@ const Login = () => {
     const [backgroundImageUrl, setBackgroundImageUrl] = useState('/isda_bg.png');
     const navigate = useNavigate();
 
-    useEffect(() => {
-        fetchBackground();
-    }, []);
-
     const fetchBackground = async () => {
         try {
             const res = await axios.get('http://localhost:5000/api/background-settings');
@@ -27,6 +23,10 @@ const Login = () => {
             setBackgroundImageUrl('/isda_bg.png');
         }
     };
+
+    useEffect(() => {
+        fetchBackground();
+    }, []);
 
     const handleLogin = async () => {
         const normalizedEmail = email.trim().toLowerCase();

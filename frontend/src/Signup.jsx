@@ -26,7 +26,6 @@ const Signup = () => {
         cityCode: '', cityName: '', barangayCode: '', barangayName: '', zipCode: '',
         address: '', email: '', password: '', confirmPassword: ''
     });
-    const [showDatePicker, setShowDatePicker] = useState(false);
     const [provinces, setProvinces] = useState([]);
     const [cities, setCities] = useState([]);
     const [barangays, setBarangays] = useState([]);

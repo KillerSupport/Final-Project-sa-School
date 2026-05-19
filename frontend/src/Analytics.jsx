@@ -169,7 +169,6 @@ const Analytics = () => {
             const currentDateKey = toDateKey(row.date);
             if (!currentDateKey) return;
 
-            const date = parseDateFromKey(currentDateKey);
             const slot = weekSlots.find((entry) => currentDateKey >= entry.week_start && currentDateKey <= entry.week_end);
 
             if (!slot) return;

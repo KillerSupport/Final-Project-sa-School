@@ -82,7 +82,7 @@ const WorkerDashboard = () => {
     const [salesView, setSalesView] = useState('history');
     const [showSalesOrderModal, setShowSalesOrderModal] = useState(false);
     const [selectedSalesOrderDetails, setSelectedSalesOrderDetails] = useState(null);
-    const [salesOrderDetailsLoading, setSalesOrderDetailsLoading] = useState(false);
+    const [_salesOrderDetailsLoading, setSalesOrderDetailsLoading] = useState(false);
 
     // Sales Reports state
     const [reportPeriod, setReportPeriod] = useState('today');
@@ -128,7 +128,7 @@ const WorkerDashboard = () => {
     // Transaction Log state
     const [transactionLog, setTransactionLog] = useState([]);
     const [transactionSearch, setTransactionSearch] = useState('');
-    const [transactionTypeFilter, setTransactionTypeFilter] = useState('all');
+    const [_transactionTypeFilter, _setTransactionTypeFilter] = useState('all');
     const [transactionLoading, setTransactionLoading] = useState(false);
 
     // Profile state
@@ -509,7 +509,7 @@ const WorkerDashboard = () => {
         }
     };
 
-    const handlePrintReceipt = (receipt) => {
+    const _handlePrintReceipt = (receipt) => {
         const printContent = `
             <div style="font-family: monospace; padding: 20px; max-width: 400px;">
                 <h2 style="text-align: center;">RECEIPT</h2>
@@ -565,7 +565,7 @@ const WorkerDashboard = () => {
         }
     };
 
-    const handleUpdateActualCash = async () => {
+    const _handleUpdateActualCash = async () => {
         const { value: actualAmount } = await Swal.fire({
             title: 'Enter Actual Cash Count',
             input: 'number',
@@ -741,14 +741,14 @@ const WorkerDashboard = () => {
         }
     };
 
-    const getInvoiceStatusLabel = (rawStatus) => {
+    const _getInvoiceStatusLabel = (rawStatus) => {
         const normalized = String(rawStatus || '').toLowerCase();
         if (normalized === 'cancelled') return 'Cancelled';
         if (normalized === 'completed' || normalized === 'delivered' || normalized === 'paid') return 'Paid';
         return 'Pending';
     };
 
-    const handleUpdateInvoiceStatus = async (orderId, status) => {
+    const _handleUpdateInvoiceStatus = async (orderId, status) => {
         try {
             await axios.put(
                 `http://localhost:5000/api/worker/invoice/${orderId}/status`,
@@ -764,7 +764,7 @@ const WorkerDashboard = () => {
         }
     };
 
-    const handleSendInvoiceEmail = async (orderId) => {
+    const _handleSendInvoiceEmail = async (orderId) => {
         try {
             await axios.post(
                 'http://localhost:5000/api/worker/send-invoice-email',

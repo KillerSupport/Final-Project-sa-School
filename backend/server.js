@@ -1,4 +1,5 @@
 // --- ACCOUNT MANAGEMENT & LOW STOCK ROUTES MOVED BELOW APP INITIALIZATION ---
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql');
 const cors = require('cors');
@@ -12,7 +13,14 @@ const PDFDocument = require('pdfkit');
 // --- ROUTES MOVED BELOW APP INITIALIZATION ---
 // JWT authentication middleware
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'dev-only-jwt-secret');
+
+if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET is required in production.');
+}
+
+const PORT = Number(process.env.PORT || 5000);
+const APP_BASE_URL = (process.env.APP_BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -26,7 +34,15 @@ function authenticateToken(req, res, next) {
 }
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.CLIENT_ORIGIN || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+app.use(cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+    credentials: true
+}));
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
@@ -133,10 +149,11 @@ const upload = multer({
 
 // --- 1. DATABASE CONNECTION ---
 const db = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password: "", 
-    database: "db_project",
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "root",
+    password: process.env.DB_PASSWORD || "",
+    database: process.env.DB_NAME || "db_project",
+    port: Number(process.env.DB_PORT || 3306),
     charset: 'utf8mb4' 
 });
 
@@ -223,8 +240,11 @@ const checkRole = (requiredRole) => {
 
 // --- 3. EMAIL CONFIG ---
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: 'tongtongornamental@gmail.com', pass: 'wsei zyzt cwpo tzlo' }
+    service: process.env.MAIL_SERVICE || 'gmail',
+    auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS
+    }
 });
 
 // Change time kapag mag testing sa school, hihihihi
@@ -791,7 +811,7 @@ app.post('/api/upload-image', upload.single('image'), (req, res) => {
         if (!req.file) {
             return res.status(400).json({ message: 'No file uploaded' });
         }
-        const imageUrl = `http://localhost:5000/uploads/${req.file.filename}`;
+        const imageUrl = `${APP_BASE_URL}/uploads/${req.file.filename}`;
         res.json({ imageUrl, filename: req.file.filename });
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -834,10 +854,10 @@ app.post('/api/upload-id', upload.fields([
             const idFrontFile = req.files?.idFront?.[0];
             const idBackFile = req.files?.idBack?.[0];
             const idFrontImageUrl = idFrontFile
-                ? `http://localhost:5000/uploads/${idFrontFile.filename}`
+                ? `${APP_BASE_URL}/uploads/${idFrontFile.filename}`
                 : (userRow.id_front_image_url || null);
             const idBackImageUrl = idBackFile
-                ? `http://localhost:5000/uploads/${idBackFile.filename}`
+                ? `${APP_BASE_URL}/uploads/${idBackFile.filename}`
                 : (userRow.id_back_image_url || null);
 
             if (!idFrontImageUrl || !idBackImageUrl) {
@@ -1115,7 +1135,7 @@ async function sendDiscontinuedProductInvoiceUpdateEmail(orderId, productName, a
         );
     }
 
-    const invoiceUrl = `http://localhost:5000/api/orders/${orderId}/invoice-pdf?userId=${order.user_id}`;
+    const invoiceUrl = `${APP_BASE_URL}/api/orders/${orderId}/invoice-pdf?userId=${order.user_id}`;
     const customerName = `${order.first_name || ''} ${order.last_name || ''}`.trim() || 'Customer';
 
     await new Promise((resolve, reject) => {
@@ -2264,8 +2284,8 @@ function sendPaymentConfirmationInvoiceEmail(orderId, requestedByUserId, callbac
 
         const sendEmail = (payload) => {
             const invoiceUrl = payload.invoice_pdf_path
-                ? `http://localhost:5000${payload.invoice_pdf_path}`
-                : `http://localhost:5000/api/orders/${payload.order_id}/invoice-pdf?userId=${payload.user_id}`;
+                ? `${APP_BASE_URL}${payload.invoice_pdf_path}`
+                : `${APP_BASE_URL}/api/orders/${payload.order_id}/invoice-pdf?userId=${payload.user_id}`;
 
             const mailOptions = {
                 from: 'tongtongornamental@gmail.com',
@@ -4286,4 +4306,4 @@ app.get('/api/categories', (req, res) => {
 
 startLowStockDigestScheduler();
 
-app.listen(5000, () => console.log("Server running on port 5000"));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

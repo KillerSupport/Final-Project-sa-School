@@ -887,12 +887,13 @@ const ProductCatalog = () => {
                                 <h4>Contact and Information</h4>
                                 <div>
                                     <strong>CONTACT DETAILS</strong>
-                                    <p>Email: adminacc@gmail.com</p>
-                                    <p>Contact number: 091234565789</p>
+                                    <p>Email: Tongtongornamental@gmail.com</p>
+                                    <p>Owner: Leoter V. Gildo</p>
+                                    <p>Contact number: 09669521165</p>
                                 </div>
                                 <div>
                                     <strong>LOCATION</strong>
-                                    <p>Address: Bulag St. Brgy. Katarata, DImahanap City, Baog, Pipilins 8080</p>
+                                    <p>Address: Medicion 2D Imus Cavite (Behind the Baranggay Hall of Medicion 2D, walk straight through reaching the area surrounded by green fence)</p>
                                 </div>
                             </div>
                         </div>

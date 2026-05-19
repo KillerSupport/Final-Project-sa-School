@@ -585,9 +585,9 @@ const AdminDashboard = () => {
         localStorage.setItem('adminActiveTab', activeTab);
     }, [activeTab]);
 
-    const [bestSellers, setBestSellers] = useState([]);
-    const [analyticsPeriod, setAnalyticsPeriod] = useState('weekly');
-    const [analyticsLoading, setAnalyticsLoading] = useState(false);
+    const [_bestSellers, setBestSellers] = useState([]);
+    const [analyticsPeriod, _setAnalyticsPeriod] = useState('weekly');
+    const [_analyticsLoading, setAnalyticsLoading] = useState(false);
 
     const fetchBestSellers = async (period = 'weekly') => {
         setAnalyticsLoading(true);

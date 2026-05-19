@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import './apiConfig';
 import './index.css';
 import Login from './Login';
 import Signup from './Signup';

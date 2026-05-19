@@ -8,7 +8,7 @@ import './Checkout.css';
 const Checkout = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { cartItems, subtotal, discountedSubtotal, discountAmount, discountRate, tax, total } = location.state || {};
+    const { cartItems, subtotal, discountedSubtotal, discountAmount, discountRate, total } = location.state || {};
     const [clientTheme, setClientTheme] = useState({
         pageBg: '#e9f7f6',
         cardBg: '#ffffff',
